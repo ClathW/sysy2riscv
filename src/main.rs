@@ -1,5 +1,8 @@
 mod ast;
+mod ir;
 
+use koopa::back::KoopaGenerator;
+use koopa::ir::Program;
 use lalrpop_util::lalrpop_mod;
 use std::env::args;
 use std::fs::read_to_string;
@@ -26,5 +29,12 @@ fn main() -> Result<()> {
 
     // 输出解析得到的 AST
     println!("{:#?}", ast);
+
+    let program = crate::ir::gen_program(&ast);
+    let mut g = KoopaGenerator::new(Vec::new());
+    g.generate_on(&program).unwrap();
+    let text_form_ir = std::str::from_utf8(&g.writer()).unwrap().to_string();
+    // println!("{}", text_form_ir);
+    std::fs::write(output, text_form_ir);
     Ok(())
 }
