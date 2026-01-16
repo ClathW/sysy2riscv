@@ -1,5 +1,3 @@
-use koopa::back::KoopaGenerator;
-use koopa::ir::builder::LocalBuilder;
 use koopa::ir::{builder_traits::*, *};
 
 use crate::ast::*;
@@ -43,7 +41,7 @@ fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt) {
     func_data.layout_mut().bbs_mut().extend([entry]);
     let one = func_data.dfg_mut().new_value().integer(stmt.num);
     let ret = func_data.dfg_mut().new_value().ret(Some(one));
-    func_data
+    let _ = func_data
         .layout_mut()
         .bb_mut(entry)
         .insts_mut()
