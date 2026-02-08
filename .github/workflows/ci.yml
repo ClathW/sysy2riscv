@@ -11,18 +11,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v6
 
+      - name: Pull container
+        run: docker pull maxxing/compiler-dev
+
+      - name: Prepare container
+        run: |
+          docker create --name compiler-test \
+          -v ${{ github.workspace }}:/root/compiler \
+          maxxing/compiler-dev \
+          sleep infinity
+
+      - name: Start container
+        run: docker start compiler-test
+
       - name: Run koopa test
-        run: |
-          docker run --rm \
-          -v ${{ github.workspace }}:/root/compiler \
-          maxxing/compiler-dev \
-          autotest -koopa /root/compiler
+        run: docker exec compiler-test autotest -koopa /root/compiler
+
       - name: Run riscv test
-        run: |
-          docker run --rm \
-          -v ${{ github.workspace }}:/root/compiler \
-          maxxing/compiler-dev \
-          autotest -riscv /root/compiler
+        run: docker exec compiler-test autotest -riscv /root/compiler
