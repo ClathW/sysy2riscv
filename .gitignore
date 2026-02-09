@@ -1,3 +1,4 @@
 /target
 *.c
 *.koopa
+*.riscv

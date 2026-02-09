@@ -44,6 +44,7 @@ fn main() -> Result<()> {
         }
         "-riscv" => {
             let asm = program.generate();
+            println!("{}", asm);
             std::fs::write(output, asm).unwrap();
             Ok(())
         }
