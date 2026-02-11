@@ -78,6 +78,42 @@ fn gen_binary(func: &FunctionData, bin: &Binary, dest: &mut i32) -> Option<Strin
     let rhs = lower_value(func, bin.rhs());
 
     match bin.op() {
+        BinaryOp::Add => {
+            let lhs = match lhs {
+                LoweredValue::Integer(int) => {
+                    buf.push_str(&format!("li t{dest}, {int}\n"));
+                    &format!("t{dest}")
+                }
+                _ => &format!("t{}", *dest - 1),
+            };
+            *dest += 1;
+            let rhs = match rhs {
+                LoweredValue::Integer(int) => {
+                    buf.push_str(&format!("li t{dest}, {int}\n"));
+                    &format!("t{dest}")
+                }
+                _ => &format!("t{}", *dest - 2),
+            };
+            buf.push_str(&format!("add t{dest}, {lhs}, {rhs}\n"));
+        }
+        BinaryOp::Div => {
+            let lhs = match lhs {
+                LoweredValue::Integer(int) => {
+                    buf.push_str(&format!("li t{dest}, {int}\n"));
+                    &format!("t{dest}")
+                }
+                _ => &format!("t{}", *dest - 1),
+            };
+            *dest += 1;
+            let rhs = match rhs {
+                LoweredValue::Integer(int) => {
+                    buf.push_str(&format!("li t{dest}, {int}\n"));
+                    &format!("t{dest}")
+                }
+                _ => &format!("t{}", *dest - 2),
+            };
+            buf.push_str(&format!("div t{dest}, {lhs}, {rhs}\n"));
+        }
         BinaryOp::Eq => {
             let lhs = match lhs {
                 LoweredValue::Integer(int) => &int.to_string(),
@@ -91,6 +127,42 @@ fn gen_binary(func: &FunctionData, bin: &Binary, dest: &mut i32) -> Option<Strin
             buf.push_str(&format!("li t{dest}, {lhs}\n"));
             buf.push_str(&format!("xor t{dest}, t{dest}, {rhs}\n"));
             buf.push_str(&format!("seqz t{dest}, t{dest}\n"));
+        }
+        BinaryOp::Mul => {
+            let lhs = match lhs {
+                LoweredValue::Integer(int) => {
+                    buf.push_str(&format!("li t{dest}, {int}\n"));
+                    &format!("t{dest}")
+                }
+                _ => &format!("t{}", *dest - 1),
+            };
+            *dest += 1;
+            let rhs = match rhs {
+                LoweredValue::Integer(int) => {
+                    buf.push_str(&format!("li t{dest}, {int}\n"));
+                    &format!("t{dest}")
+                }
+                _ => &format!("t{}", *dest - 2),
+            };
+            buf.push_str(&format!("mul t{dest}, {lhs}, {rhs}\n"));
+        }
+        BinaryOp::Mod => {
+            let lhs = match lhs {
+                LoweredValue::Integer(int) => {
+                    buf.push_str(&format!("li t{dest}, {int}\n"));
+                    &format!("t{dest}")
+                }
+                _ => &format!("t{}", *dest - 1),
+            };
+            *dest += 1;
+            let rhs = match rhs {
+                LoweredValue::Integer(int) => {
+                    buf.push_str(&format!("li t{dest}, {int}\n"));
+                    &format!("t{dest}")
+                }
+                _ => &format!("t{}", *dest - 2),
+            };
+            buf.push_str(&format!("rem t{dest}, {lhs}, {rhs}\n"));
         }
         BinaryOp::Sub => {
             let lhs = match lhs {

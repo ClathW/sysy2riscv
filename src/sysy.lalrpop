@@ -27,7 +27,20 @@ Block: Block = "{" <stmt: Stmt> "}" => Block { <> };
 
 Stmt: Stmt = "return" <exp: Exp> ";" => Stmt { <> };
 
-Exp: Exp = <unary_exp: UnaryExp> => Exp{ <> };
+Exp: Exp = <add_exp: AddExp> => Exp{ <> };
+
+AddExp: AddExp = {
+  <mul_exp: MulExp> => AddExp::Mul(<>),
+  <add_exp: AddExp> "+" <mul_exp: MulExp> => AddExp::Add { add: Box::new(add_exp), op: AddOp::Plus, mul: mul_exp },
+  <add_exp: AddExp> "-" <mul_exp: MulExp> => AddExp::Add { add: Box::new(add_exp), op: AddOp::Minus, mul: mul_exp },
+}
+
+MulExp: MulExp = {
+  <unary_exp: UnaryExp> => MulExp::Unary(<>),
+  <mul_exp: MulExp> "*" <unary_exp: UnaryExp> => MulExp::Mul { mul: Box::new(mul_exp), op: MulOp::Mul, unary: unary_exp },
+  <mul_exp: MulExp> "/" <unary_exp: UnaryExp> => MulExp::Mul { mul: Box::new(mul_exp), op: MulOp::Div, unary: unary_exp },
+  <mul_exp: MulExp> "%" <unary_exp: UnaryExp> => MulExp::Mul { mul: Box::new(mul_exp), op: MulOp::Mod, unary: unary_exp },
+};
 
 UnaryExp: UnaryExp = {
   <primary_exp: PrimaryExp> => UnaryExp::PrimaryExp(Box::new( <> )),

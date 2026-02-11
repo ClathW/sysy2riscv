@@ -47,7 +47,7 @@ fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt) {
     //     .insts_mut()
     //     .push_key_back(ret);
     let exp = &stmt.exp;
-    let ret_val = gen_exp(func_data, &exp);
+    let ret_val = gen_exp(func_data, exp);
     let ret = func_data.dfg_mut().new_value().ret(Some(ret_val));
     let _ = func_data
         .layout_mut()
@@ -57,14 +57,100 @@ fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt) {
 }
 
 fn gen_exp(func_data: &mut FunctionData, exp: &Exp) -> Value {
-    gen_unaryexp(func_data, &exp.unary_exp)
+    gen_add_exp(func_data, &exp.add_exp)
 }
 
-fn gen_unaryexp(func_data: &mut FunctionData, unaryexp: &UnaryExp) -> Value {
+fn gen_add_exp(func_data: &mut FunctionData, add_exp: &AddExp) -> Value {
+    match add_exp {
+        AddExp::Mul(mul) => gen_mul_exp(func_data, mul),
+        AddExp::Add { add, op, mul } => {
+            let lhs = gen_add_exp(func_data, add);
+            let rhs = gen_mul_exp(func_data, mul);
+            let entry = func_data.layout().bbs().front_key().copied().unwrap();
+            match op {
+                AddOp::Minus => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Sub, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+                AddOp::Plus => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Add, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+            }
+        }
+    }
+}
+
+fn gen_mul_exp(func_data: &mut FunctionData, mul_exp: &MulExp) -> Value {
+    match mul_exp {
+        MulExp::Unary(unary) => gen_unary_exp(func_data, unary),
+        MulExp::Mul { mul, op, unary } => {
+            let lhs = gen_mul_exp(func_data, mul);
+            let rhs = gen_unary_exp(func_data, unary);
+            let entry = func_data.layout().bbs().front_key().copied().unwrap();
+            match op {
+                MulOp::Div => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Div, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+                MulOp::Mod => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Mod, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+                MulOp::Mul => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Mul, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+            }
+        }
+    }
+}
+
+fn gen_unary_exp(func_data: &mut FunctionData, unaryexp: &UnaryExp) -> Value {
     match unaryexp {
         UnaryExp::PrimaryExp(pri_exp) => gen_prime_exp(func_data, pri_exp),
         UnaryExp::Unary { op, exp } => {
-            let val = gen_unaryexp(func_data, exp);
+            let val = gen_unary_exp(func_data, exp);
             let entry = func_data.layout().bbs().front_key().copied().unwrap();
 
             match op {
@@ -102,7 +188,7 @@ fn gen_unaryexp(func_data: &mut FunctionData, unaryexp: &UnaryExp) -> Value {
 
 fn gen_prime_exp(func_data: &mut FunctionData, pri_exp: &PrimaryExp) -> Value {
     match pri_exp {
-        PrimaryExp::Exp(exp) => gen_exp(func_data, &exp),
+        PrimaryExp::Exp(exp) => gen_exp(func_data, exp),
         PrimaryExp::Number(num) => func_data.dfg_mut().new_value().integer(*num),
     }
 }
