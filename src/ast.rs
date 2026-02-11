@@ -28,7 +28,7 @@ pub struct Stmt {
 
 #[derive(Debug)]
 pub struct Exp {
-    pub add_exp: AddExp,
+    pub lor_exp: LOrExp,
 }
 
 #[derive(Debug)]
@@ -81,4 +81,42 @@ pub enum MulOp {
     Mul,
     Div,
     Mod,
+}
+
+#[derive(Debug)]
+pub enum LOrExp {
+    LAnd(LAndExp),
+    LOr { lor: Box<LOrExp>, land: LAndExp },
+}
+
+#[derive(Debug)]
+pub enum LAndExp {
+    Eq(EqExp),
+    LAnd { land: Box<LAndExp>, eq: EqExp },
+}
+
+#[derive(Debug)]
+pub enum EqExp {
+    Rel(RelExp),
+    Eq { eq: Box<EqExp>, op: EqOp, rel: RelExp },
+}
+
+#[derive(Debug)]
+pub enum RelExp {
+    Add(AddExp),
+    Rel { rel: Box<RelExp>, op: RelOp, add: AddExp },
+}
+
+#[derive(Debug)]
+pub enum RelOp {
+    Lt,
+    Gt,
+    Le,
+    Ge,
+}
+
+#[derive(Debug)]
+pub enum EqOp {
+    Eq,
+    Neq,
 }

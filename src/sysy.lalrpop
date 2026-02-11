@@ -27,7 +27,7 @@ Block: Block = "{" <stmt: Stmt> "}" => Block { <> };
 
 Stmt: Stmt = "return" <exp: Exp> ";" => Stmt { <> };
 
-Exp: Exp = <add_exp: AddExp> => Exp{ <> };
+Exp: Exp = <lor_exp: LOrExp> => Exp{ <> };
 
 AddExp: AddExp = {
   <mul_exp: MulExp> => AddExp::Mul(<>),
@@ -46,6 +46,30 @@ UnaryExp: UnaryExp = {
   <primary_exp: PrimaryExp> => UnaryExp::PrimaryExp(Box::new( <> )),
   <unary_op: UnaryOp> <unary_exp: UnaryExp> =>
     UnaryExp::Unary{op: unary_op, exp: Box::new(unary_exp)},
+};
+
+LOrExp: LOrExp = {
+  <land_exp: LAndExp> => LOrExp::LAnd( <> ),
+  <lor_exp: LOrExp> "||" <land_exp: LAndExp> => LOrExp::LOr{ lor: Box::new(lor_exp), land: land_exp },
+}
+
+LAndExp: LAndExp = {
+  <eq_exp: EqExp> => LAndExp::Eq( <> ),
+  <land_exp: LAndExp> "&&" <eq_exp: EqExp> => LAndExp::LAnd{ land: Box::new(land_exp), eq: eq_exp },
+}
+
+EqExp: EqExp = {
+  <rel_exp: RelExp> => EqExp::Rel( <> ),
+  <eq_exp: EqExp> "==" <rel_exp: RelExp> => EqExp::Eq{ eq: Box::new(eq_exp), op: EqOp::Eq, rel: rel_exp },
+  <eq_exp: EqExp> "!=" <rel_exp: RelExp> => EqExp::Eq{ eq: Box::new(eq_exp), op: EqOp::Neq, rel: rel_exp },
+};
+
+RelExp: RelExp = {
+  <add_exp: AddExp> => RelExp::Add( <> ),
+  <rel_exp: RelExp> "<" <add_exp: AddExp> => RelExp::Rel{ rel: Box::new(rel_exp), op: RelOp::Lt, add: add_exp },
+  <rel_exp: RelExp> ">" <add_exp: AddExp> => RelExp::Rel{ rel: Box::new(rel_exp), op: RelOp::Gt, add: add_exp },
+  <rel_exp: RelExp> "<=" <add_exp: AddExp> => RelExp::Rel{ rel: Box::new(rel_exp), op: RelOp::Le, add: add_exp },
+  <rel_exp: RelExp> ">=" <add_exp: AddExp> => RelExp::Rel{ rel: Box::new(rel_exp), op: RelOp::Ge, add: add_exp },
 };
 
 PrimaryExp: PrimaryExp = {

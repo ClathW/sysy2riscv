@@ -57,7 +57,189 @@ fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt) {
 }
 
 fn gen_exp(func_data: &mut FunctionData, exp: &Exp) -> Value {
-    gen_add_exp(func_data, &exp.add_exp)
+    gen_lor_exp(func_data, &exp.lor_exp)
+}
+
+fn gen_lor_exp(func_data: &mut FunctionData, lor_exp: &LOrExp) -> Value {
+    match lor_exp {
+        LOrExp::LAnd(land) => gen_land_exp(func_data, land),
+        LOrExp::LOr { lor, land } => {
+            let entry = func_data.layout().bbs().front_key().copied().unwrap();
+            let lval = gen_lor_exp(func_data, lor);
+            let zero = func_data.dfg_mut().new_value().integer(0);
+            let lhs = func_data
+                .dfg_mut()
+                .new_value()
+                .binary(BinaryOp::NotEq, lval, zero);
+            let rval = gen_land_exp(func_data, land);
+            let zero = func_data.dfg_mut().new_value().integer(0);
+            let rhs = func_data
+                .dfg_mut()
+                .new_value()
+                .binary(BinaryOp::NotEq, rval, zero);
+            let _ = func_data
+                .layout_mut()
+                .bb_mut(entry)
+                .insts_mut()
+                .push_key_back(lhs);
+            let _ = func_data
+                .layout_mut()
+                .bb_mut(entry)
+                .insts_mut()
+                .push_key_back(rhs);
+
+            let result = func_data
+                .dfg_mut()
+                .new_value()
+                .binary(BinaryOp::Or, lhs, rhs);
+            let _ = func_data
+                .layout_mut()
+                .bb_mut(entry)
+                .insts_mut()
+                .push_key_back(result);
+            result
+        }
+    }
+}
+
+fn gen_land_exp(func_data: &mut FunctionData, land_exp: &LAndExp) -> Value {
+    match land_exp {
+        LAndExp::Eq(eq) => gen_eq_exp(func_data, eq),
+        LAndExp::LAnd { land, eq } => {
+            let entry = func_data.layout().bbs().front_key().copied().unwrap();
+            let lval = gen_land_exp(func_data, land);
+            let zero = func_data.dfg_mut().new_value().integer(0);
+            let lhs = func_data
+                .dfg_mut()
+                .new_value()
+                .binary(BinaryOp::NotEq, lval, zero);
+            let rval = gen_eq_exp(func_data, eq);
+            let zero = func_data.dfg_mut().new_value().integer(0);
+            let rhs = func_data
+                .dfg_mut()
+                .new_value()
+                .binary(BinaryOp::NotEq, rval, zero);
+            let _ = func_data
+                .layout_mut()
+                .bb_mut(entry)
+                .insts_mut()
+                .push_key_back(lhs);
+            let _ = func_data
+                .layout_mut()
+                .bb_mut(entry)
+                .insts_mut()
+                .push_key_back(rhs);
+
+            let result = func_data
+                .dfg_mut()
+                .new_value()
+                .binary(BinaryOp::And, lhs, rhs);
+            let _ = func_data
+                .layout_mut()
+                .bb_mut(entry)
+                .insts_mut()
+                .push_key_back(result);
+            result
+        }
+    }
+}
+
+fn gen_eq_exp(func_data: &mut FunctionData, eq_exp: &EqExp) -> Value {
+    match eq_exp {
+        EqExp::Rel(rel) => gen_rel_exp(func_data, rel),
+        EqExp::Eq { eq, op, rel } => {
+            let lhs = gen_eq_exp(func_data, eq);
+            let rhs = gen_rel_exp(func_data, rel);
+            let entry = func_data.layout().bbs().front_key().copied().unwrap();
+            match op {
+                EqOp::Eq => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Eq, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+                EqOp::Neq => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::NotEq, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+            }
+        }
+    }
+}
+
+fn gen_rel_exp(func_data: &mut FunctionData, rel_exp: &RelExp) -> Value {
+    match rel_exp {
+        RelExp::Add(add) => gen_add_exp(func_data, add),
+        RelExp::Rel { rel, op, add } => {
+            let lhs = gen_rel_exp(func_data, rel);
+            let rhs = gen_add_exp(func_data, add);
+            let entry = func_data.layout().bbs().front_key().copied().unwrap();
+            match op {
+                RelOp::Lt => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Lt, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+                RelOp::Gt => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Gt, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+                RelOp::Le => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Le, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+                RelOp::Ge => {
+                    let result = func_data
+                        .dfg_mut()
+                        .new_value()
+                        .binary(BinaryOp::Ge, lhs, rhs);
+                    let _ = func_data
+                        .layout_mut()
+                        .bb_mut(entry)
+                        .insts_mut()
+                        .push_key_back(result);
+                    result
+                }
+            }
+        }
+    }
 }
 
 fn gen_add_exp(func_data: &mut FunctionData, add_exp: &AddExp) -> Value {
