@@ -137,7 +137,7 @@ fn eval_const_def(const_def: &mut ConstDef, map: &mut HashMap<String, i32>) {
     let const_init_val = &const_def.const_init_val;
     if map.contains_key(ident) {
         panic!(
-            "The const value {ident} is already exist, which's  value is {}",
+            "The const value {ident} is already exist, which's value is {}",
             map.get(ident).unwrap()
         );
     } else {

@@ -1,9 +1,9 @@
-mod assembly_gen;
+mod codegen;
 mod ast;
-mod ir;
+mod irgen;
 mod sem_analyze;
 
-use crate::assembly_gen::GenerateAsm;
+use crate::codegen::GenerateAsm;
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
 use std::env::args;
@@ -37,7 +37,7 @@ fn main() -> Result<()> {
     println!("After constant evaluation:");
     println!("{:#?}", ast);
 
-    let program = crate::ir::gen_program(&ast);
+    let program = crate::irgen::gen_program(&ast);
 
     match mode.as_str() {
         "-koopa" => {
