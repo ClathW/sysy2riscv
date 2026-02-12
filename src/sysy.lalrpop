@@ -23,7 +23,30 @@ FuncDef: FuncDef = {
 
 FuncType: FuncType = "int" => FuncType::Int;
 
-Block: Block = "{" <stmt: Stmt> "}" => Block { <> };
+Block: Block = "{" <block_items: (BlockItem)*> "}" => Block { <> };
+
+BlockItem: BlockItem = {
+  <decl: Decl> => BlockItem::Decl(decl),
+  <stmt: Stmt> => BlockItem::Stmt(stmt),
+}
+
+Decl: Decl = <const_decl: ConstDecl> => Decl { <> };
+
+ConstDecl: ConstDecl = {
+  "const" <b_type: BType> <head: ConstDef> <rest: ("," <ConstDef>)*> ";" => {
+    let mut defs = vec![head];
+    defs.extend(rest);
+    ConstDecl { b_type, const_defs: defs }
+  }
+}
+
+BType: BType = "int" => BType::Int;
+
+ConstDef: ConstDef = <ident: Ident> "=" <const_init_val: ConstInitVal> => ConstDef { ident, const_init_val };
+
+ConstInitVal: ConstInitVal = <const_exp: ConstExp> => ConstInitVal { <> };
+
+ConstExp: ConstExp = <exp: Exp> => ConstExp{ <> };
 
 Stmt: Stmt = "return" <exp: Exp> ";" => Stmt { <> };
 
@@ -74,8 +97,11 @@ RelExp: RelExp = {
 
 PrimaryExp: PrimaryExp = {
   "(" <exp: Exp> ")" => PrimaryExp::Exp(Box::new( <> )),
-  <num: Number> => PrimaryExp::Number(num)
+  <lval: LVal> => PrimaryExp::LVal(lval),
+  <num: Number> => PrimaryExp::Number(num),
 };
+
+LVal: LVal = <ident: Ident> => LVal{ <> };
 
 UnaryOp: UnaryOp = {
   "+" => UnaryOp::Plus,

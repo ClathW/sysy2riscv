@@ -1,8 +1,9 @@
+mod assembly_gen;
 mod ast;
-mod codegen;
 mod ir;
+mod sem_analyze;
 
-use crate::codegen::GenerateAsm;
+use crate::assembly_gen::GenerateAsm;
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
 use std::env::args;
@@ -26,9 +27,14 @@ fn main() -> Result<()> {
     // 读取输入文件
     let input = read_to_string(input)?;
 
-    let ast = sysy::CompUnitParser::new().parse(&input).unwrap();
+    let mut ast = sysy::CompUnitParser::new().parse(&input).unwrap();
 
     // 输出解析得到的 AST
+    println!("{:#?}", ast);
+
+    crate::sem_analyze::constant_eval(&mut ast);
+
+    println!("After constant evaluation:");
     println!("{:#?}", ast);
 
     let program = crate::ir::gen_program(&ast);

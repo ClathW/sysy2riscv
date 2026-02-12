@@ -1,7 +1,6 @@
 use koopa::ir::{values::*, *};
 use std::collections::HashMap;
 
-#[allow(dead_code)]
 enum LoweredValue {
     Integer(i32),
     Else(Value),

@@ -18,7 +18,51 @@ pub enum FuncType {
 
 #[derive(Debug)]
 pub struct Block {
-    pub stmt: Stmt,
+    pub block_items: Vec<BlockItem>,
+}
+
+#[derive(Debug)]
+pub enum BlockItem {
+    Decl(Decl),
+    Stmt(Stmt),
+}
+
+#[derive(Debug)]
+pub struct Decl {
+    pub const_decl: ConstDecl,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct ConstDecl {
+    pub b_type: BType,
+    pub const_defs: Vec<ConstDef>,
+}
+
+#[derive(Debug)]
+pub enum BType {
+    Int,
+}
+
+#[derive(Debug)]
+pub struct ConstDef {
+    pub ident: String,
+    pub const_init_val: ConstInitVal,
+}
+
+#[derive(Debug)]
+pub struct ConstInitVal {
+    pub const_exp: ConstExp,
+}
+
+#[derive(Debug)]
+pub struct ConstExp {
+    pub exp: Exp,
+}
+
+#[derive(Debug)]
+pub struct LVal {
+    pub ident: String,
 }
 
 #[derive(Debug)]
@@ -47,6 +91,7 @@ pub enum UnaryExp {
 #[derive(Debug)]
 pub enum PrimaryExp {
     Exp(Box<Exp>),
+    LVal(LVal),
     Number(i32),
 }
 
@@ -98,13 +143,21 @@ pub enum LAndExp {
 #[derive(Debug)]
 pub enum EqExp {
     Rel(RelExp),
-    Eq { eq: Box<EqExp>, op: EqOp, rel: RelExp },
+    Eq {
+        eq: Box<EqExp>,
+        op: EqOp,
+        rel: RelExp,
+    },
 }
 
 #[derive(Debug)]
 pub enum RelExp {
     Add(AddExp),
-    Rel { rel: Box<RelExp>, op: RelOp, add: AddExp },
+    Rel {
+        rel: Box<RelExp>,
+        op: RelOp,
+        add: AddExp,
+    },
 }
 
 #[derive(Debug)]

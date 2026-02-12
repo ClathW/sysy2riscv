@@ -29,7 +29,17 @@ fn gen_func(program: &mut Program, func: &FuncDef) {
 }
 
 fn gen_block(func_data: &mut FunctionData, block: &Block) {
-    gen_stmt(func_data, &block.stmt)
+    // gen_stmt(func_data, &block.stmt)
+    for item in &block.block_items {
+        match item {
+            BlockItem::Stmt(stmt) => gen_stmt(func_data, stmt),
+            BlockItem::Decl(decl) => gen_decl(func_data, decl),
+        }
+    }
+}
+
+fn gen_decl(_func_data: &mut FunctionData, _decl: &Decl) {
+    unreachable!("常量声明应该在语义分析阶段被删除")
 }
 
 fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt) {
@@ -371,6 +381,9 @@ fn gen_unary_exp(func_data: &mut FunctionData, unaryexp: &UnaryExp) -> Value {
 fn gen_prime_exp(func_data: &mut FunctionData, pri_exp: &PrimaryExp) -> Value {
     match pri_exp {
         PrimaryExp::Exp(exp) => gen_exp(func_data, exp),
+        PrimaryExp::LVal(_lval) => {
+            unreachable!("常量引用应该在语义分析阶段被替换为字面量")
+        }
         PrimaryExp::Number(num) => func_data.dfg_mut().new_value().integer(*num),
     }
 }
