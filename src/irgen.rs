@@ -1,14 +1,16 @@
+use std::collections::HashMap;
+
 use koopa::ir::{builder_traits::*, *};
 
-use crate::ast::*;
+use crate::{ast::*, sem_analyze::Symbol};
 
-pub fn gen_program(ast: &CompUnit) -> Program {
+pub fn gen_program(ast: &CompUnit, map: &mut HashMap<String, Symbol>) -> Program {
     let mut program = Program::new();
-    gen_func(&mut program, &ast.func_def);
+    gen_func(&mut program, &ast.func_def, map);
     program
 }
 
-fn gen_func(program: &mut Program, func: &FuncDef) {
+fn gen_func(program: &mut Program, func: &FuncDef, map: &mut HashMap<String, Symbol>) {
     // let functype = ast.func_type;
     // let type = match functype {
     //     FuncType::Int => Type::get_i32(),
@@ -25,63 +27,146 @@ fn gen_func(program: &mut Program, func: &FuncDef) {
 
     let func_data = program.func_mut(main);
 
-    gen_block(func_data, &func.block);
+    gen_block(func_data, &func.block, map);
 }
 
-fn gen_block(func_data: &mut FunctionData, block: &Block) {
-    // gen_stmt(func_data, &block.stmt)
-    for item in &block.block_items {
-        match item {
-            BlockItem::Stmt(stmt) => gen_stmt(func_data, stmt),
-            BlockItem::Decl(decl) => gen_decl(func_data, decl),
-        }
-    }
-}
-
-fn gen_decl(_func_data: &mut FunctionData, _decl: &Decl) {
-    unreachable!("常量声明应该在语义分析阶段被删除")
-}
-
-fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt) {
+fn gen_block(func_data: &mut FunctionData, block: &Block, map: &mut HashMap<String, Symbol>) {
     let entry = func_data
         .dfg_mut()
         .new_bb()
         .basic_block(Some("%entry".into()));
 
     func_data.layout_mut().bbs_mut().extend([entry]);
-    // let one = func_data.dfg_mut().new_value().integer(//TODO);
-    // let ret = func_data.dfg_mut().new_value().ret(Some(one));
-    // let _ = func_data
-    //     .layout_mut()
-    //     .bb_mut(entry)
-    //     .insts_mut()
-    //     .push_key_back(ret);
-    let exp = &stmt.exp;
-    let ret_val = gen_exp(func_data, exp);
-    let ret = func_data.dfg_mut().new_value().ret(Some(ret_val));
-    let _ = func_data
-        .layout_mut()
-        .bb_mut(entry)
-        .insts_mut()
-        .push_key_back(ret);
+    // gen_stmt(func_data, &block.stmt)
+    for item in &block.block_items {
+        match item {
+            BlockItem::Stmt(stmt) => gen_stmt(func_data, stmt, map),
+            BlockItem::Decl(decl) => gen_decl(func_data, decl, map),
+        }
+    }
 }
 
-fn gen_exp(func_data: &mut FunctionData, exp: &Exp) -> Value {
-    gen_lor_exp(func_data, &exp.lor_exp)
+fn gen_decl(func_data: &mut FunctionData, decl: &Decl, map: &mut HashMap<String, Symbol>) {
+    match decl {
+        Decl::Const(..) => {
+            unreachable!("常量声明应该在语义分析阶段被删除")
+        }
+        Decl::Var(var_decl) => {
+            gen_var_decl(func_data, var_decl, map);
+        }
+    }
 }
 
-fn gen_lor_exp(func_data: &mut FunctionData, lor_exp: &LOrExp) -> Value {
+fn gen_var_decl(
+    func_data: &mut FunctionData,
+    var_decl: &VarDecl,
+    map: &mut HashMap<String, Symbol>,
+) {
+    for var_def in &var_decl.vardefs {
+        gen_var_def(func_data, var_def, map);
+    }
+}
+
+fn gen_var_def(func_data: &mut FunctionData, var_def: &VarDef, map: &mut HashMap<String, Symbol>) {
+    let entry = func_data.layout().bbs().front_key().copied().unwrap();
+    let alloc = func_data.dfg_mut().new_value().alloc(Type::get_i32());
+    match var_def {
+        VarDef::Ident(ident) => {
+            if let Some(v) = map.get_mut(ident) {
+                *v = Symbol::Var(Some(alloc));
+            } else {
+                panic!("Identifier not found in symbol table");
+            }
+            let _ = func_data
+                .layout_mut()
+                .bb_mut(entry)
+                .insts_mut()
+                .push_key_back(alloc);
+        }
+        VarDef::Assign { ident, val } => {
+            if let Some(v) = map.get_mut(ident) {
+                *v = Symbol::Var(Some(alloc));
+            } else {
+                panic!("Identifier not found in symbol table");
+            }
+            let init_val = gen_init_val(func_data, val, map);
+            let store = func_data.dfg_mut().new_value().store(init_val, alloc);
+            func_data
+                .layout_mut()
+                .bb_mut(entry)
+                .insts_mut()
+                .extend([alloc, store]);
+            println!("assign");
+        }
+    }
+}
+
+fn gen_init_val(
+    func_data: &mut FunctionData,
+    init_val: &InitVal,
+    map: &mut HashMap<String, Symbol>,
+) -> Value {
+    gen_exp(func_data, &init_val.exp, map)
+}
+
+fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt, map: &mut HashMap<String, Symbol>) {
+    let entry = func_data.layout().bbs().front_key().copied().unwrap();
+
+    match stmt {
+        Stmt::Assign { lval, exp } => {
+            let val = gen_exp(func_data, exp, map);
+            if let Some(v) = map.get_mut(&lval.ident) {
+                match v {
+                    Symbol::Var(var) => {
+                        if let Some(alloc) = var {
+                            let store = func_data.dfg_mut().new_value().store(val, *alloc);
+                            let _ = func_data
+                                .layout_mut()
+                                .bb_mut(entry)
+                                .insts_mut()
+                                .push_key_back(store);
+                        } else {
+                            panic!("Variable {} is not initialized", lval.ident);
+                        }
+                    }
+                    _ => panic!("Identifier {} is not a variable", lval.ident),
+                }
+            } else {
+                panic!("Identifier {} not found", lval.ident);
+            }
+        }
+        Stmt::Ret(exp) => {
+            let val = gen_exp(func_data, exp, map);
+            let ret = func_data.dfg_mut().new_value().ret(Some(val));
+            let _ = func_data
+                .layout_mut()
+                .bb_mut(entry)
+                .insts_mut()
+                .push_key_back(ret);
+        }
+    }
+}
+
+fn gen_exp(func_data: &mut FunctionData, exp: &Exp, map: &mut HashMap<String, Symbol>) -> Value {
+    gen_lor_exp(func_data, &exp.lor_exp, map)
+}
+
+fn gen_lor_exp(
+    func_data: &mut FunctionData,
+    lor_exp: &LOrExp,
+    map: &mut HashMap<String, Symbol>,
+) -> Value {
     match lor_exp {
-        LOrExp::LAnd(land) => gen_land_exp(func_data, land),
+        LOrExp::LAnd(land) => gen_land_exp(func_data, land, map),
         LOrExp::LOr { lor, land } => {
             let entry = func_data.layout().bbs().front_key().copied().unwrap();
-            let lval = gen_lor_exp(func_data, lor);
+            let lval = gen_lor_exp(func_data, lor, map);
             let zero = func_data.dfg_mut().new_value().integer(0);
             let lhs = func_data
                 .dfg_mut()
                 .new_value()
                 .binary(BinaryOp::NotEq, lval, zero);
-            let rval = gen_land_exp(func_data, land);
+            let rval = gen_land_exp(func_data, land, map);
             let zero = func_data.dfg_mut().new_value().integer(0);
             let rhs = func_data
                 .dfg_mut()
@@ -112,18 +197,22 @@ fn gen_lor_exp(func_data: &mut FunctionData, lor_exp: &LOrExp) -> Value {
     }
 }
 
-fn gen_land_exp(func_data: &mut FunctionData, land_exp: &LAndExp) -> Value {
+fn gen_land_exp(
+    func_data: &mut FunctionData,
+    land_exp: &LAndExp,
+    map: &mut HashMap<String, Symbol>,
+) -> Value {
     match land_exp {
-        LAndExp::Eq(eq) => gen_eq_exp(func_data, eq),
+        LAndExp::Eq(eq) => gen_eq_exp(func_data, eq, map),
         LAndExp::LAnd { land, eq } => {
             let entry = func_data.layout().bbs().front_key().copied().unwrap();
-            let lval = gen_land_exp(func_data, land);
+            let lval = gen_land_exp(func_data, land, map);
             let zero = func_data.dfg_mut().new_value().integer(0);
             let lhs = func_data
                 .dfg_mut()
                 .new_value()
                 .binary(BinaryOp::NotEq, lval, zero);
-            let rval = gen_eq_exp(func_data, eq);
+            let rval = gen_eq_exp(func_data, eq, map);
             let zero = func_data.dfg_mut().new_value().integer(0);
             let rhs = func_data
                 .dfg_mut()
@@ -154,12 +243,16 @@ fn gen_land_exp(func_data: &mut FunctionData, land_exp: &LAndExp) -> Value {
     }
 }
 
-fn gen_eq_exp(func_data: &mut FunctionData, eq_exp: &EqExp) -> Value {
+fn gen_eq_exp(
+    func_data: &mut FunctionData,
+    eq_exp: &EqExp,
+    map: &mut HashMap<String, Symbol>,
+) -> Value {
     match eq_exp {
-        EqExp::Rel(rel) => gen_rel_exp(func_data, rel),
+        EqExp::Rel(rel) => gen_rel_exp(func_data, rel, map),
         EqExp::Eq { eq, op, rel } => {
-            let lhs = gen_eq_exp(func_data, eq);
-            let rhs = gen_rel_exp(func_data, rel);
+            let lhs = gen_eq_exp(func_data, eq, map);
+            let rhs = gen_rel_exp(func_data, rel, map);
             let entry = func_data.layout().bbs().front_key().copied().unwrap();
             match op {
                 EqOp::Eq => {
@@ -191,12 +284,16 @@ fn gen_eq_exp(func_data: &mut FunctionData, eq_exp: &EqExp) -> Value {
     }
 }
 
-fn gen_rel_exp(func_data: &mut FunctionData, rel_exp: &RelExp) -> Value {
+fn gen_rel_exp(
+    func_data: &mut FunctionData,
+    rel_exp: &RelExp,
+    map: &mut HashMap<String, Symbol>,
+) -> Value {
     match rel_exp {
-        RelExp::Add(add) => gen_add_exp(func_data, add),
+        RelExp::Add(add) => gen_add_exp(func_data, add, map),
         RelExp::Rel { rel, op, add } => {
-            let lhs = gen_rel_exp(func_data, rel);
-            let rhs = gen_add_exp(func_data, add);
+            let lhs = gen_rel_exp(func_data, rel, map);
+            let rhs = gen_add_exp(func_data, add, map);
             let entry = func_data.layout().bbs().front_key().copied().unwrap();
             match op {
                 RelOp::Lt => {
@@ -252,12 +349,16 @@ fn gen_rel_exp(func_data: &mut FunctionData, rel_exp: &RelExp) -> Value {
     }
 }
 
-fn gen_add_exp(func_data: &mut FunctionData, add_exp: &AddExp) -> Value {
+fn gen_add_exp(
+    func_data: &mut FunctionData,
+    add_exp: &AddExp,
+    map: &mut HashMap<String, Symbol>,
+) -> Value {
     match add_exp {
-        AddExp::Mul(mul) => gen_mul_exp(func_data, mul),
+        AddExp::Mul(mul) => gen_mul_exp(func_data, mul, map),
         AddExp::Add { add, op, mul } => {
-            let lhs = gen_add_exp(func_data, add);
-            let rhs = gen_mul_exp(func_data, mul);
+            let lhs = gen_add_exp(func_data, add, map);
+            let rhs = gen_mul_exp(func_data, mul, map);
             let entry = func_data.layout().bbs().front_key().copied().unwrap();
             match op {
                 AddOp::Minus => {
@@ -289,12 +390,16 @@ fn gen_add_exp(func_data: &mut FunctionData, add_exp: &AddExp) -> Value {
     }
 }
 
-fn gen_mul_exp(func_data: &mut FunctionData, mul_exp: &MulExp) -> Value {
+fn gen_mul_exp(
+    func_data: &mut FunctionData,
+    mul_exp: &MulExp,
+    map: &mut HashMap<String, Symbol>,
+) -> Value {
     match mul_exp {
-        MulExp::Unary(unary) => gen_unary_exp(func_data, unary),
+        MulExp::Unary(unary) => gen_unary_exp(func_data, unary, map),
         MulExp::Mul { mul, op, unary } => {
-            let lhs = gen_mul_exp(func_data, mul);
-            let rhs = gen_unary_exp(func_data, unary);
+            let lhs = gen_mul_exp(func_data, mul, map);
+            let rhs = gen_unary_exp(func_data, unary, map);
             let entry = func_data.layout().bbs().front_key().copied().unwrap();
             match op {
                 MulOp::Div => {
@@ -338,11 +443,15 @@ fn gen_mul_exp(func_data: &mut FunctionData, mul_exp: &MulExp) -> Value {
     }
 }
 
-fn gen_unary_exp(func_data: &mut FunctionData, unaryexp: &UnaryExp) -> Value {
+fn gen_unary_exp(
+    func_data: &mut FunctionData,
+    unaryexp: &UnaryExp,
+    map: &mut HashMap<String, Symbol>,
+) -> Value {
     match unaryexp {
-        UnaryExp::PrimaryExp(pri_exp) => gen_prime_exp(func_data, pri_exp),
+        UnaryExp::PrimaryExp(pri_exp) => gen_prime_exp(func_data, pri_exp, map),
         UnaryExp::Unary { op, exp } => {
-            let val = gen_unary_exp(func_data, exp);
+            let val = gen_unary_exp(func_data, exp, map);
             let entry = func_data.layout().bbs().front_key().copied().unwrap();
 
             match op {
@@ -378,11 +487,35 @@ fn gen_unary_exp(func_data: &mut FunctionData, unaryexp: &UnaryExp) -> Value {
     }
 }
 
-fn gen_prime_exp(func_data: &mut FunctionData, pri_exp: &PrimaryExp) -> Value {
+fn gen_prime_exp(
+    func_data: &mut FunctionData,
+    pri_exp: &PrimaryExp,
+    map: &mut HashMap<String, Symbol>,
+) -> Value {
     match pri_exp {
-        PrimaryExp::Exp(exp) => gen_exp(func_data, exp),
-        PrimaryExp::LVal(_lval) => {
-            unreachable!("常量引用应该在语义分析阶段被替换为字面量")
+        PrimaryExp::Exp(exp) => gen_exp(func_data, exp, map),
+        PrimaryExp::LVal(lval) => {
+            if let Some(v) = map.get_mut(&lval.ident) {
+                match v {
+                    Symbol::Var(var) => {
+                        if let Some(alloc) = var {
+                            let load = func_data.dfg_mut().new_value().load(*alloc);
+                            let entry = func_data.layout().bbs().front_key().copied().unwrap();
+                            let _ = func_data
+                                .layout_mut()
+                                .bb_mut(entry)
+                                .insts_mut()
+                                .push_key_back(load);
+                            load
+                        } else {
+                            panic!("Variable {} is not initialized", lval.ident);
+                        }
+                    }
+                    Symbol::Const(val) => func_data.dfg_mut().new_value().integer(*val),
+                }
+            } else {
+                panic!("Identifier {} not found", lval.ident);
+            }
         }
         PrimaryExp::Number(num) => func_data.dfg_mut().new_value().integer(*num),
     }

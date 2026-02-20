@@ -30,7 +30,27 @@ BlockItem: BlockItem = {
   <stmt: Stmt> => BlockItem::Stmt(stmt),
 }
 
-Decl: Decl = <const_decl: ConstDecl> => Decl { <> };
+Decl: Decl = {
+    <const_decl: ConstDecl> => Decl::Const ( <> ),
+    <var_decl: VarDecl> => Decl::Var ( <> ),
+}
+
+VarDecl: VarDecl = {
+    <b_type: BType> <head: VarDef> <rest: ("," <VarDef>)*> ";" => {
+        let mut vardefs = vec![head];
+        vardefs.extend(rest);
+        VarDecl { b_type, vardefs }
+    }
+}
+
+VarDef: VarDef = {
+    <ident: Ident> "=" <init_val: InitVal> => VarDef::Assign {ident, val: init_val},
+    <ident: Ident> => VarDef::Ident(ident),
+}
+
+InitVal: InitVal = {
+    <exp: Exp> => InitVal { <> },
+}
 
 ConstDecl: ConstDecl = {
   "const" <b_type: BType> <head: ConstDef> <rest: ("," <ConstDef>)*> ";" => {
@@ -48,7 +68,10 @@ ConstInitVal: ConstInitVal = <const_exp: ConstExp> => ConstInitVal { <> };
 
 ConstExp: ConstExp = <exp: Exp> => ConstExp{ <> };
 
-Stmt: Stmt = "return" <exp: Exp> ";" => Stmt { <> };
+Stmt: Stmt = {
+    <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign { lval, exp },
+    "return" <exp: Exp> ";" => Stmt::Ret(exp),
+}
 
 Exp: Exp = <lor_exp: LOrExp> => Exp{ <> };
 

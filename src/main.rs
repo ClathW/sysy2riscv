@@ -1,5 +1,5 @@
-mod codegen;
 mod ast;
+mod codegen;
 mod irgen;
 mod sem_analyze;
 
@@ -30,14 +30,16 @@ fn main() -> Result<()> {
     let mut ast = sysy::CompUnitParser::new().parse(&input).unwrap();
 
     // 输出解析得到的 AST
-    println!("{:#?}", ast);
+    // println!("{:#?}", ast);
 
-    crate::sem_analyze::constant_eval(&mut ast);
+    let mut symbol_table = crate::sem_analyze::constant_eval(&mut ast);
 
-    println!("After constant evaluation:");
-    println!("{:#?}", ast);
+    // println!("The symbol map is {:?}", symbol_table);
 
-    let program = crate::irgen::gen_program(&ast);
+    // println!("After constant evaluation:");
+    // println!("{:#?}", ast);
+
+    let program = crate::irgen::gen_program(&ast, &mut symbol_table);
 
     match mode.as_str() {
         "-koopa" => {
