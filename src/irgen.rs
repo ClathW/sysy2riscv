@@ -96,7 +96,6 @@ fn gen_var_def(func_data: &mut FunctionData, var_def: &VarDef, map: &mut HashMap
                 .bb_mut(entry)
                 .insts_mut()
                 .extend([alloc, store]);
-            println!("assign");
         }
     }
 }
