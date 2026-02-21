@@ -37,7 +37,6 @@ fn gen_block(func_data: &mut FunctionData, block: &Block, map: &mut HashMap<Stri
         .basic_block(Some("%entry".into()));
 
     func_data.layout_mut().bbs_mut().extend([entry]);
-    // gen_stmt(func_data, &block.stmt)
     for item in &block.block_items {
         match item {
             BlockItem::Stmt(stmt) => gen_stmt(func_data, stmt, map),

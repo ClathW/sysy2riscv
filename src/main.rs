@@ -11,20 +11,20 @@ use std::fs::read_to_string;
 use std::io::Error;
 use std::io::{ErrorKind, Result};
 
-// 引用 lalrpop 生成的解析器
-// 因为我们刚刚创建了 sysy.lalrpop, 所以模块名是 sysy
 lalrpop_mod!(sysy);
 
 fn main() -> Result<()> {
-    // 解析命令行参数
-    let mut args = args();
-    args.next();
-    let mode = args.next().unwrap();
-    let input = args.next().unwrap();
-    args.next();
-    let output = args.next().unwrap();
+    let args: Vec<String> = args().collect();
+    if args.len() != 5 {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Usage: compiler -mode input_file -o output_file",
+        ));
+    }
+    let mode = &args[1];
+    let input = &args[2];
+    let output = &args[4];
 
-    // 读取输入文件
     let input = read_to_string(input)?;
 
     let mut ast = sysy::CompUnitParser::new().parse(&input).unwrap();
