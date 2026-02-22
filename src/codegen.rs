@@ -94,7 +94,7 @@ fn inst_to_asm(
     let value = func.dfg().value(inst);
 
     match value.kind() {
-        ValueKind::Alloc(_) => None, 
+        ValueKind::Alloc(_) => None,
         ValueKind::Load(load) => gen_load(func, load, inst, dest, value_regs, alloc_offsets),
         ValueKind::Store(store) => gen_store(func, store, dest, value_regs, alloc_offsets),
         ValueKind::Binary(bin) => gen_binary(func, bin, inst, dest, value_regs),
