@@ -179,10 +179,16 @@ fn gen_stmt(
         Stmt::If { cond, then, else_ } => {
             let cond_val = gen_exp(func_data, cond, map, *cur_bb);
 
-            let end_bb = func_data.dfg_mut().new_bb().basic_block(None);
+            let end_bb = func_data
+                .dfg_mut()
+                .new_bb()
+                .basic_block(Some("%end".into()));
             func_data.layout_mut().bbs_mut().extend([end_bb]);
 
-            let then_entry_bb = func_data.dfg_mut().new_bb().basic_block(None);
+            let then_entry_bb = func_data
+                .dfg_mut()
+                .new_bb()
+                .basic_block(Some("%then".into()));
             func_data.layout_mut().bbs_mut().extend([then_entry_bb]);
             let mut then_exit_bb = then_entry_bb;
             let mut then_map = map.clone();
@@ -197,7 +203,10 @@ fn gen_stmt(
             }
 
             if let Some(else_) = else_ {
-                let else_entry_bb = func_data.dfg_mut().new_bb().basic_block(None);
+                let else_entry_bb = func_data
+                    .dfg_mut()
+                    .new_bb()
+                    .basic_block(Some("%else".into()));
                 func_data.layout_mut().bbs_mut().extend([else_entry_bb]);
                 let mut else_exit_bb = else_entry_bb;
                 let mut else_map = map.clone();
