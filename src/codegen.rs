@@ -31,10 +31,22 @@ impl GenerateAsm for FunctionData {
     fn generate(&self) -> String {
         let mut buf = String::new();
         let mut value_regs: HashMap<Value, i32> = HashMap::new();
+        let alloc_offsets = build_alloc_offsets(self);
+        let stack_size = stack_size(self);
+        if stack_size > 0 {
+            buf.push_str(&format!("addi sp, sp, -{stack_size}\n"));
+        }
         for (_, node) in self.layout().bbs() {
             let mut num = 0;
             for &inst in node.insts().keys() {
-                if let Some(asm) = inst_to_asm(self, inst, &mut num, &mut value_regs) {
+                if let Some(asm) = inst_to_asm(
+                    self,
+                    inst,
+                    &mut num,
+                    &mut value_regs,
+                    &alloc_offsets,
+                    stack_size,
+                ) {
                     buf.push_str(&asm);
                 }
             }
@@ -43,19 +55,103 @@ impl GenerateAsm for FunctionData {
     }
 }
 
+fn build_alloc_offsets(func: &FunctionData) -> HashMap<Value, i32> {
+    let mut map = HashMap::new();
+    let mut offset = 0i32;
+    for (_, node) in func.layout().bbs() {
+        for &inst in node.insts().keys() {
+            let value_data = func.dfg().value(inst);
+            if matches!(value_data.kind(), ValueKind::Alloc(_)) {
+                map.insert(inst, offset);
+                offset += 4;
+            }
+        }
+    }
+    map
+}
+
+fn stack_size(func: &FunctionData) -> i32 {
+    let mut count = 0i32;
+    for (_, node) in func.layout().bbs() {
+        for &inst in node.insts().keys() {
+            let value_data = func.dfg().value(inst);
+            if matches!(value_data.kind(), ValueKind::Alloc(_)) {
+                count += 1;
+            }
+        }
+    }
+    ((count * 4 + 15) / 16) * 16
+}
+
 fn inst_to_asm(
     func: &FunctionData,
     inst: Value,
     dest: &mut i32,
     value_regs: &mut HashMap<Value, i32>,
+    alloc_offsets: &HashMap<Value, i32>,
+    stack_size: i32,
 ) -> Option<String> {
     let value = func.dfg().value(inst);
 
     match value.kind() {
+        ValueKind::Alloc(_) => None, 
+        ValueKind::Load(load) => gen_load(func, load, inst, dest, value_regs, alloc_offsets),
+        ValueKind::Store(store) => gen_store(func, store, dest, value_regs, alloc_offsets),
         ValueKind::Binary(bin) => gen_binary(func, bin, inst, dest, value_regs),
-        ValueKind::Return(ret) => gen_return(func, ret, dest, value_regs),
+        ValueKind::Return(ret) => gen_return(func, ret, dest, value_regs, stack_size),
         _ => None,
     }
+}
+
+fn gen_load(
+    _func: &FunctionData,
+    load: &Load,
+    inst: Value,
+    dest: &mut i32,
+    value_regs: &mut HashMap<Value, i32>,
+    alloc_offsets: &HashMap<Value, i32>,
+) -> Option<String> {
+    let ptr = load.src();
+    let offset = alloc_offsets
+        .get(&ptr)
+        .expect("load: alloc not found in offset map");
+    let reg_num = *dest % 7;
+    let reg = format!("t{}", reg_num);
+    value_regs.insert(inst, reg_num);
+    *dest += 1;
+    Some(format!("lw {}, {}(sp)\n", reg, offset))
+}
+
+fn gen_store(
+    func: &FunctionData,
+    store: &Store,
+    dest: &mut i32,
+    value_regs: &HashMap<Value, i32>,
+    alloc_offsets: &HashMap<Value, i32>,
+) -> Option<String> {
+    let val = store.value();
+    let ptr = store.dest();
+    let offset = alloc_offsets
+        .get(&ptr)
+        .expect("store: alloc not found in offset map");
+
+    let mut buf = String::new();
+    let src_reg = match lower_value(func, val) {
+        LoweredValue::Integer(int) => {
+            let reg = format!("t{}", *dest % 7);
+            buf.push_str(&format!("li {}, {}\n", reg, int));
+            *dest += 1;
+            reg
+        }
+        LoweredValue::Else(v) => {
+            let reg_num = value_regs
+                .get(&v)
+                .expect("store: source value not in register map");
+            format!("t{}", reg_num)
+        }
+    };
+    buf.push_str(&format!("sw {}, {}(sp)\n", src_reg, offset));
+    Some(buf)
 }
 
 fn gen_return(
@@ -63,21 +159,26 @@ fn gen_return(
     ret: &Return,
     dest: &mut i32,
     value_regs: &HashMap<Value, i32>,
+    stack_size: i32,
 ) -> Option<String> {
     let mut buf = String::new();
 
     if let Some(val) = ret.value() {
-        let val = lower_value(func, val);
-        match val {
+        match lower_value(func, val) {
             LoweredValue::Integer(int) => {
                 buf.push_str(&format!("li a0, {int}\n"));
             }
             LoweredValue::Else(v) => {
-                let default_reg = (*dest - 1).rem_euclid(7);
-                let reg = value_regs.get(&v).unwrap_or(&default_reg);
-                buf.push_str(&format!("mv a0, t{}\n", reg));
+                let reg_num = value_regs
+                    .get(&v)
+                    .copied()
+                    .unwrap_or_else(|| (*dest - 1).rem_euclid(7));
+                buf.push_str(&format!("mv a0, t{}\n", reg_num));
             }
         }
+    }
+    if stack_size > 0 {
+        buf.push_str(&format!("addi sp, sp, {stack_size}\n"));
     }
     buf.push_str("ret\n");
     Some(buf)
