@@ -105,7 +105,7 @@ fn process_stmt(stmt: &mut Stmt, map: &mut SymbolTable, next_var_id: &mut usize)
 }
 
 fn process_var_decl(var_decl: &mut VarDecl, map: &mut SymbolTable, next_var_id: &mut usize) {
-    for var_def in &mut var_decl.vardefs {
+    for var_def in &mut var_decl.var_defs {
         process_var_def(var_def, map, next_var_id);
     }
 }
@@ -202,21 +202,21 @@ fn replace_mul_exp(mul_exp: &mut MulExp, map: &SymbolTable) {
 
 fn replace_unary_exp(unary_exp: &mut UnaryExp, map: &SymbolTable) {
     match unary_exp {
-        UnaryExp::PrimaryExp(pri_exp) => replace_primary_exp(pri_exp, map),
+        UnaryExp::PrimaryExp(primary_exp) => replace_primary_exp(primary_exp, map),
         UnaryExp::Unary { exp, .. } => {
             replace_unary_exp(exp, map);
         }
     }
 }
 
-fn replace_primary_exp(pri_exp: &mut PrimaryExp, map: &SymbolTable) {
-    match pri_exp {
+fn replace_primary_exp(primary_exp: &mut PrimaryExp, map: &SymbolTable) {
+    match primary_exp {
         PrimaryExp::Exp(exp) => replace_exp(exp, map),
         PrimaryExp::LVal(lval) => {
             if let Some(value) = map.get(&lval.ident) {
                 match value {
                     Symbol::Const(num) => {
-                        *pri_exp = PrimaryExp::Number(*num);
+                        *primary_exp = PrimaryExp::Number(*num);
                     }
                     Symbol::Var(unique_ident) => {
                         lval.ident = unique_ident.clone();
@@ -380,7 +380,7 @@ fn eval_mul_exp(mul_exp: &MulExp, map: &mut SymbolTable) -> i32 {
 
 fn eval_unary_exp(unary_exp: &UnaryExp, map: &mut SymbolTable) -> i32 {
     match unary_exp {
-        UnaryExp::PrimaryExp(pri_exp) => eval_primary_exp(pri_exp, map),
+        UnaryExp::PrimaryExp(primary_exp) => eval_primary_exp(primary_exp, map),
         UnaryExp::Unary { op, exp } => {
             let val = eval_unary_exp(exp, map);
             match op {
@@ -398,8 +398,8 @@ fn eval_unary_exp(unary_exp: &UnaryExp, map: &mut SymbolTable) -> i32 {
     }
 }
 
-fn eval_primary_exp(pri_exp: &PrimaryExp, map: &mut SymbolTable) -> i32 {
-    match pri_exp {
+fn eval_primary_exp(primary_exp: &PrimaryExp, map: &mut SymbolTable) -> i32 {
+    match primary_exp {
         PrimaryExp::Exp(exp) => eval_exp(exp, map),
         PrimaryExp::LVal(lval) => {
             let symbol = map

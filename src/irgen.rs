@@ -62,7 +62,7 @@ fn gen_var_decl(
     var_decl: &VarDecl,
     map: &mut HashMap<String, Value>,
 ) {
-    for var_def in &var_decl.vardefs {
+    for var_def in &var_decl.var_defs {
         gen_var_def(func_data, var_def, map);
     }
 }
@@ -444,11 +444,11 @@ fn gen_mul_exp(
 
 fn gen_unary_exp(
     func_data: &mut FunctionData,
-    unaryexp: &UnaryExp,
+    unary_exp: &UnaryExp,
     map: &mut HashMap<String, Value>,
 ) -> Value {
-    match unaryexp {
-        UnaryExp::PrimaryExp(pri_exp) => gen_prime_exp(func_data, pri_exp, map),
+    match unary_exp {
+        UnaryExp::PrimaryExp(primary_exp) => gen_primary_exp(func_data, primary_exp, map),
         UnaryExp::Unary { op, exp } => {
             let val = gen_unary_exp(func_data, exp, map);
             let entry = func_data.layout().bbs().front_key().copied().unwrap();
@@ -486,12 +486,12 @@ fn gen_unary_exp(
     }
 }
 
-fn gen_prime_exp(
+fn gen_primary_exp(
     func_data: &mut FunctionData,
-    pri_exp: &PrimaryExp,
+    primary_exp: &PrimaryExp,
     map: &mut HashMap<String, Value>,
 ) -> Value {
-    match pri_exp {
+    match primary_exp {
         PrimaryExp::Exp(exp) => gen_exp(func_data, exp, map),
         PrimaryExp::LVal(lval) => {
             if let Some(alloc) = map.get(&lval.ident) {

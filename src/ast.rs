@@ -37,7 +37,7 @@ pub enum Decl {
 #[allow(dead_code)]
 pub struct VarDecl {
     pub b_type: BType,
-    pub vardefs: Vec<VarDef>,
+    pub var_defs: Vec<VarDef>,
 }
 
 #[derive(Debug)]

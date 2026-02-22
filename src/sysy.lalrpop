@@ -37,9 +37,9 @@ Decl: Decl = {
 
 VarDecl: VarDecl = {
     <b_type: BType> <head: VarDef> <rest: ("," <VarDef>)*> ";" => {
-        let mut vardefs = vec![head];
-        vardefs.extend(rest);
-        VarDecl { b_type, vardefs }
+        let mut var_defs = vec![head];
+        var_defs.extend(rest);
+        VarDecl { b_type, var_defs }
     }
 }
 

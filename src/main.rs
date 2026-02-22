@@ -45,9 +45,9 @@ fn main() -> Result<()> {
         "-koopa" => {
             let mut g = KoopaGenerator::new(Vec::new());
             g.generate_on(&program).unwrap();
-            let text_form_ir = std::str::from_utf8(&g.writer()).unwrap().to_string();
-            println!("{}", text_form_ir);
-            std::fs::write(output, text_form_ir)?;
+            let text_from_ir = std::str::from_utf8(&g.writer()).unwrap().to_string();
+            println!("{}", text_from_ir);
+            std::fs::write(output, text_from_ir)?;
             Ok(())
         }
         "-riscv" => {
