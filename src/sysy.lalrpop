@@ -70,7 +70,9 @@ ConstExp: ConstExp = <exp: Exp> => ConstExp{ <> };
 
 Stmt: Stmt = {
     <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign { lval, exp },
-    "return" <exp: Exp> ";" => Stmt::Ret(exp),
+    "return" <exp: Exp?> ";" => Stmt::Ret( exp ),
+    <block: Block> => Stmt::Block( block ),
+    <exp: Exp?> ";" => Stmt::Exp( exp ),
 }
 
 Exp: Exp = <lor_exp: LOrExp> => Exp{ <> };

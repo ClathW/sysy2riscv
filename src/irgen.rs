@@ -2,15 +2,15 @@ use std::collections::HashMap;
 
 use koopa::ir::{builder_traits::*, *};
 
-use crate::{ast::*, sem_analyze::Symbol};
+use crate::ast::*;
 
-pub fn gen_program(ast: &CompUnit, map: &mut HashMap<String, Symbol>) -> Program {
+pub fn gen_program(ast: &CompUnit) -> Program {
     let mut program = Program::new();
-    gen_func(&mut program, &ast.func_def, map);
+    gen_func(&mut program, &ast.func_def);
     program
 }
 
-fn gen_func(program: &mut Program, func: &FuncDef, map: &mut HashMap<String, Symbol>) {
+fn gen_func(program: &mut Program, func: &FuncDef) {
     // let functype = ast.func_type;
     // let type = match functype {
     //     FuncType::Int => Type::get_i32(),
@@ -26,11 +26,12 @@ fn gen_func(program: &mut Program, func: &FuncDef, map: &mut HashMap<String, Sym
     ));
 
     let func_data = program.func_mut(main);
+    let mut map = HashMap::new();
 
-    gen_block(func_data, &func.block, map);
+    gen_block(func_data, &func.block, &mut map);
 }
 
-fn gen_block(func_data: &mut FunctionData, block: &Block, map: &mut HashMap<String, Symbol>) {
+fn gen_block(func_data: &mut FunctionData, block: &Block, map: &mut HashMap<String, Value>) {
     let entry = func_data
         .dfg_mut()
         .new_bb()
@@ -45,7 +46,7 @@ fn gen_block(func_data: &mut FunctionData, block: &Block, map: &mut HashMap<Stri
     }
 }
 
-fn gen_decl(func_data: &mut FunctionData, decl: &Decl, map: &mut HashMap<String, Symbol>) {
+fn gen_decl(func_data: &mut FunctionData, decl: &Decl, map: &mut HashMap<String, Value>) {
     match decl {
         Decl::Const(..) => {
             unreachable!("常量声明应该在语义分析阶段被删除")
@@ -59,23 +60,19 @@ fn gen_decl(func_data: &mut FunctionData, decl: &Decl, map: &mut HashMap<String,
 fn gen_var_decl(
     func_data: &mut FunctionData,
     var_decl: &VarDecl,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) {
     for var_def in &var_decl.vardefs {
         gen_var_def(func_data, var_def, map);
     }
 }
 
-fn gen_var_def(func_data: &mut FunctionData, var_def: &VarDef, map: &mut HashMap<String, Symbol>) {
+fn gen_var_def(func_data: &mut FunctionData, var_def: &VarDef, map: &mut HashMap<String, Value>) {
     let entry = func_data.layout().bbs().front_key().copied().unwrap();
     let alloc = func_data.dfg_mut().new_value().alloc(Type::get_i32());
     match var_def {
         VarDef::Ident(ident) => {
-            if let Some(v) = map.get_mut(ident) {
-                *v = Symbol::Var(Some(alloc));
-            } else {
-                panic!("Identifier not found in symbol table");
-            }
+            map.insert(ident.clone(), alloc);
             let _ = func_data
                 .layout_mut()
                 .bb_mut(entry)
@@ -83,11 +80,7 @@ fn gen_var_def(func_data: &mut FunctionData, var_def: &VarDef, map: &mut HashMap
                 .push_key_back(alloc);
         }
         VarDef::Assign { ident, val } => {
-            if let Some(v) = map.get_mut(ident) {
-                *v = Symbol::Var(Some(alloc));
-            } else {
-                panic!("Identifier not found in symbol table");
-            }
+            map.insert(ident.clone(), alloc);
             let init_val = gen_init_val(func_data, val, map);
             let store = func_data.dfg_mut().new_value().store(init_val, alloc);
             func_data
@@ -102,40 +95,48 @@ fn gen_var_def(func_data: &mut FunctionData, var_def: &VarDef, map: &mut HashMap
 fn gen_init_val(
     func_data: &mut FunctionData,
     init_val: &InitVal,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) -> Value {
     gen_exp(func_data, &init_val.exp, map)
 }
 
-fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt, map: &mut HashMap<String, Symbol>) {
+fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt, map: &mut HashMap<String, Value>) {
     let entry = func_data.layout().bbs().front_key().copied().unwrap();
 
     match stmt {
         Stmt::Assign { lval, exp } => {
             let val = gen_exp(func_data, exp, map);
-            if let Some(v) = map.get_mut(&lval.ident) {
-                match v {
-                    Symbol::Var(var) => {
-                        if let Some(alloc) = var {
-                            let store = func_data.dfg_mut().new_value().store(val, *alloc);
-                            let _ = func_data
-                                .layout_mut()
-                                .bb_mut(entry)
-                                .insts_mut()
-                                .push_key_back(store);
-                        } else {
-                            panic!("Variable {} is not initialized", lval.ident);
-                        }
-                    }
-                    _ => panic!("Identifier {} is not a variable", lval.ident),
-                }
+            if let Some(alloc) = map.get(&lval.ident) {
+                let store = func_data.dfg_mut().new_value().store(val, *alloc);
+                let _ = func_data
+                    .layout_mut()
+                    .bb_mut(entry)
+                    .insts_mut()
+                    .push_key_back(store);
             } else {
                 panic!("Identifier {} not found", lval.ident);
             }
         }
+        Stmt::Block(block) => {
+            for item in &block.block_items {
+                match item {
+                    BlockItem::Stmt(stmt) => gen_stmt(func_data, stmt, map),
+                    BlockItem::Decl(decl) => gen_decl(func_data, decl, map),
+                }
+            }
+        }
+        Stmt::Exp(Some(exp)) => {
+            let _ = gen_exp(func_data, exp, map);
+        }
+        Stmt::Exp(None) => {}
         Stmt::Ret(exp) => {
-            let val = gen_exp(func_data, exp, map);
-            let ret = func_data.dfg_mut().new_value().ret(Some(val));
+            let ret = match exp {
+                Some(exp) => {
+                    let val = gen_exp(func_data, exp, map);
+                    func_data.dfg_mut().new_value().ret(Some(val))
+                }
+                None => func_data.dfg_mut().new_value().ret(None),
+            };
             let _ = func_data
                 .layout_mut()
                 .bb_mut(entry)
@@ -145,14 +146,14 @@ fn gen_stmt(func_data: &mut FunctionData, stmt: &Stmt, map: &mut HashMap<String,
     }
 }
 
-fn gen_exp(func_data: &mut FunctionData, exp: &Exp, map: &mut HashMap<String, Symbol>) -> Value {
+fn gen_exp(func_data: &mut FunctionData, exp: &Exp, map: &mut HashMap<String, Value>) -> Value {
     gen_lor_exp(func_data, &exp.lor_exp, map)
 }
 
 fn gen_lor_exp(
     func_data: &mut FunctionData,
     lor_exp: &LOrExp,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) -> Value {
     match lor_exp {
         LOrExp::LAnd(land) => gen_land_exp(func_data, land, map),
@@ -198,7 +199,7 @@ fn gen_lor_exp(
 fn gen_land_exp(
     func_data: &mut FunctionData,
     land_exp: &LAndExp,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) -> Value {
     match land_exp {
         LAndExp::Eq(eq) => gen_eq_exp(func_data, eq, map),
@@ -244,7 +245,7 @@ fn gen_land_exp(
 fn gen_eq_exp(
     func_data: &mut FunctionData,
     eq_exp: &EqExp,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) -> Value {
     match eq_exp {
         EqExp::Rel(rel) => gen_rel_exp(func_data, rel, map),
@@ -285,7 +286,7 @@ fn gen_eq_exp(
 fn gen_rel_exp(
     func_data: &mut FunctionData,
     rel_exp: &RelExp,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) -> Value {
     match rel_exp {
         RelExp::Add(add) => gen_add_exp(func_data, add, map),
@@ -350,7 +351,7 @@ fn gen_rel_exp(
 fn gen_add_exp(
     func_data: &mut FunctionData,
     add_exp: &AddExp,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) -> Value {
     match add_exp {
         AddExp::Mul(mul) => gen_mul_exp(func_data, mul, map),
@@ -391,7 +392,7 @@ fn gen_add_exp(
 fn gen_mul_exp(
     func_data: &mut FunctionData,
     mul_exp: &MulExp,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) -> Value {
     match mul_exp {
         MulExp::Unary(unary) => gen_unary_exp(func_data, unary, map),
@@ -444,7 +445,7 @@ fn gen_mul_exp(
 fn gen_unary_exp(
     func_data: &mut FunctionData,
     unaryexp: &UnaryExp,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) -> Value {
     match unaryexp {
         UnaryExp::PrimaryExp(pri_exp) => gen_prime_exp(func_data, pri_exp, map),
@@ -488,29 +489,20 @@ fn gen_unary_exp(
 fn gen_prime_exp(
     func_data: &mut FunctionData,
     pri_exp: &PrimaryExp,
-    map: &mut HashMap<String, Symbol>,
+    map: &mut HashMap<String, Value>,
 ) -> Value {
     match pri_exp {
         PrimaryExp::Exp(exp) => gen_exp(func_data, exp, map),
         PrimaryExp::LVal(lval) => {
-            if let Some(v) = map.get_mut(&lval.ident) {
-                match v {
-                    Symbol::Var(var) => {
-                        if let Some(alloc) = var {
-                            let load = func_data.dfg_mut().new_value().load(*alloc);
-                            let entry = func_data.layout().bbs().front_key().copied().unwrap();
-                            let _ = func_data
-                                .layout_mut()
-                                .bb_mut(entry)
-                                .insts_mut()
-                                .push_key_back(load);
-                            load
-                        } else {
-                            panic!("Variable {} is not initialized", lval.ident);
-                        }
-                    }
-                    Symbol::Const(val) => func_data.dfg_mut().new_value().integer(*val),
-                }
+            if let Some(alloc) = map.get(&lval.ident) {
+                let load = func_data.dfg_mut().new_value().load(*alloc);
+                let entry = func_data.layout().bbs().front_key().copied().unwrap();
+                let _ = func_data
+                    .layout_mut()
+                    .bb_mut(entry)
+                    .insts_mut()
+                    .push_key_back(load);
+                load
             } else {
                 panic!("Identifier {} not found", lval.ident);
             }

@@ -2,3 +2,5 @@
 *.c
 *.koopa
 *.riscv
+.vscode
+.zed

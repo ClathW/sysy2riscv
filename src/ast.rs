@@ -86,8 +86,10 @@ pub struct LVal {
 
 #[derive(Debug)]
 pub enum Stmt {
-    Ret(Exp),
     Assign { lval: LVal, exp: Exp },
+    Block(Block),
+    Exp(Option<Exp>),
+    Ret(Option<Exp>),
 }
 
 #[derive(Debug)]

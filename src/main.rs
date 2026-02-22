@@ -32,14 +32,14 @@ fn main() -> Result<()> {
     // 输出解析得到的 AST
     // println!("{:#?}", ast);
 
-    let mut symbol_table = crate::sem_analyze::constant_eval(&mut ast);
+    crate::sem_analyze::constant_eval(&mut ast);
 
     // println!("The symbol map is {:?}", symbol_table);
 
     // println!("After constant evaluation:");
     // println!("{:#?}", ast);
 
-    let program = crate::irgen::gen_program(&ast, &mut symbol_table);
+    let program = crate::irgen::gen_program(&ast);
 
     match mode.as_str() {
         "-koopa" => {
