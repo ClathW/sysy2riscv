@@ -29,15 +29,12 @@ fn main() -> Result<()> {
 
     let mut ast = sysy::CompUnitParser::new().parse(&input).unwrap();
 
-    // 输出解析得到的 AST
-    // println!("{:#?}", ast);
+    println!("{:#?}", ast);
 
     crate::sem_analyze::constant_eval(&mut ast);
 
-    // println!("The symbol map is {:?}", symbol_table);
-
-    // println!("After constant evaluation:");
-    // println!("{:#?}", ast);
+    println!("After constant evaluation:");
+    println!("{:#?}", ast);
 
     let program = crate::irgen::gen_program(&ast);
 

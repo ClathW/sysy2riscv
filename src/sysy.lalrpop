@@ -69,11 +69,41 @@ ConstInitVal: ConstInitVal = <const_exp: ConstExp> => ConstInitVal { <> };
 ConstExp: ConstExp = <exp: Exp> => ConstExp{ <> };
 
 Stmt: Stmt = {
-    <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign { lval, exp },
-    "return" <exp: Exp?> ";" => Stmt::Ret( exp ),
-    <block: Block> => Stmt::Block( block ),
-    <exp: Exp?> ";" => Stmt::Exp( exp ),
+    MatchedStmt,
+    UnmatchedStmt,
+};
+
+MatchedStmt: Stmt = {
+  "if" "(" <cond: Exp> ")" <then: MatchedStmt> "else" <else_: MatchedStmt> 
+  => Stmt::If {
+    cond,
+    then: Box::new(then),
+    else_: Some(Box::new(else_)),
+  },
+  OtherStmt,
+};
+
+UnmatchedStmt: Stmt = {
+  "if" "(" <cond: Exp> ")" <then: Stmt> 
+  => Stmt::If {
+    cond,
+    then: Box::new(then),
+    else_: None,
+  },
+  "if" "(" <cond: Exp> ")" <then: MatchedStmt> "else" <else_: UnmatchedStmt>
+  => Stmt::If {
+    cond,
+    then: Box::new(then),
+    else_: Some(Box::new(else_)),
+  },
 }
+
+OtherStmt: Stmt = {
+  <lval: LVal> "=" <exp: Exp> ";" => Stmt::Assign { lval, exp },
+  "return" <exp: Exp?> ";" => Stmt::Ret(exp),
+  <block: Block> => Stmt::Block(block),
+  <exp: Exp?> ";" => Stmt::Exp(exp),
+};
 
 Exp: Exp = <lor_exp: LOrExp> => Exp{ <> };
 

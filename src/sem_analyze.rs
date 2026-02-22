@@ -99,6 +99,13 @@ fn process_stmt(stmt: &mut Stmt, map: &mut SymbolTable, next_var_id: &mut usize)
         }
         Stmt::Block(block) => process_block(block, map, next_var_id),
         Stmt::Exp(Some(exp)) => replace_exp(exp, map),
+        Stmt::If { cond, then, else_ } => {
+            replace_exp(cond, map);
+            process_stmt(then, map, next_var_id);
+            if let Some(else_) = else_ {
+                process_stmt(else_, map, next_var_id);
+            }
+        }
         Stmt::Ret(Some(exp)) => replace_exp(exp, map),
         Stmt::Exp(None) | Stmt::Ret(None) => {}
     }
