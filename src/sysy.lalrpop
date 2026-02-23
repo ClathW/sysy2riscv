@@ -80,6 +80,10 @@ MatchedStmt: Stmt = {
     then: Box::new(then),
     else_: Some(Box::new(else_)),
   },
+  "while" "(" <cond: Exp> ")" <body: MatchedStmt> => Stmt::While {
+    cond,
+    body: Box::new(body),
+  },
   OtherStmt,
 };
 
@@ -95,6 +99,10 @@ UnmatchedStmt: Stmt = {
     cond,
     then: Box::new(then),
     else_: Some(Box::new(else_)),
+  },
+  "while" "(" <cond: Exp> ")" <body: UnmatchedStmt> => Stmt::While {
+    cond,
+    body: Box::new(body),
   },
 }
 

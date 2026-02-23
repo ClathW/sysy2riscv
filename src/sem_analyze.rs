@@ -107,6 +107,10 @@ fn process_stmt(stmt: &mut Stmt, map: &mut SymbolTable, next_var_id: &mut usize)
             }
         }
         Stmt::Ret(Some(exp)) => replace_exp(exp, map),
+        Stmt::While { cond, body } => {
+            replace_exp(cond, map);
+            process_stmt(body, map, next_var_id);
+        }
         Stmt::Exp(None) | Stmt::Ret(None) => {}
     }
 }

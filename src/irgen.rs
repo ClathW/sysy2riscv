@@ -252,6 +252,48 @@ fn gen_stmt(
             }
             *cur_bb = end_bb;
         }
+        Stmt::While { cond, body } => {
+            let cond_entry_bb = func_data
+                .dfg_mut()
+                .new_bb()
+                .basic_block(Some("%while_entry".into()));
+
+            let while_body_bb = func_data
+                .dfg_mut()
+                .new_bb()
+                .basic_block(Some("%while_body".into()));
+
+            let end_bb = func_data
+                .dfg_mut()
+                .new_bb()
+                .basic_block(Some("%while_end".into()));
+            func_data
+                .layout_mut()
+                .bbs_mut()
+                .extend([cond_entry_bb, while_body_bb, end_bb]);
+
+            let jmp_to_entry = func_data.dfg_mut().new_value().jump(cond_entry_bb);
+            push_inst(func_data, *cur_bb, jmp_to_entry);
+
+            let mut cond_exit_bb = cond_entry_bb;
+            let cond_raw = gen_exp(func_data, cond, map, &mut cond_exit_bb);
+            let cond_val = gen_bool_value(func_data, cond_raw, cond_exit_bb);
+            let br_val = func_data
+                .dfg_mut()
+                .new_value()
+                .branch(cond_val, while_body_bb, end_bb);
+            push_inst(func_data, cond_exit_bb, br_val);
+
+            let mut body_exit_bb = while_body_bb;
+            let mut body_map = map.clone();
+            gen_stmt(func_data, body, &mut body_map, entry_bb, &mut body_exit_bb);
+            if !bb_is_terminated(func_data, body_exit_bb) {
+                let jmp_to_entry = func_data.dfg_mut().new_value().jump(cond_entry_bb);
+                push_inst(func_data, body_exit_bb, jmp_to_entry);
+            }
+
+            *cur_bb = end_bb;
+        }
         Stmt::Ret(exp) => {
             let ret = match exp {
                 Some(exp) => {
@@ -289,11 +331,11 @@ fn gen_lor_exp(
             let rhs_bb = func_data
                 .dfg_mut()
                 .new_bb()
-                .basic_block(Some("%lor.rhs".into()));
+                .basic_block(Some("%lor_rhs".into()));
             let end_bb = func_data
                 .dfg_mut()
                 .new_bb()
-                .basic_block(Some("%lor.end".into()));
+                .basic_block(Some("%lor_end".into()));
             func_data.layout_mut().bbs_mut().extend([rhs_bb, end_bb]);
 
             let result_alloc = new_temp_i32_alloc(func_data);
@@ -344,11 +386,11 @@ fn gen_land_exp(
             let rhs_bb = func_data
                 .dfg_mut()
                 .new_bb()
-                .basic_block(Some("%land.rhs".into()));
+                .basic_block(Some("%land_rhs".into()));
             let end_bb = func_data
                 .dfg_mut()
                 .new_bb()
-                .basic_block(Some("%land.end".into()));
+                .basic_block(Some("%land_end".into()));
             func_data.layout_mut().bbs_mut().extend([rhs_bb, end_bb]);
 
             let result_alloc = new_temp_i32_alloc(func_data);
