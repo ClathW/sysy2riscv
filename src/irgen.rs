@@ -24,10 +24,25 @@ fn gen_func(program: &mut Program, func: &FuncDef) {
     let func_data = program.func_mut(main);
     let mut map = HashMap::new();
 
-    gen_block(func_data, &func.block, &mut map);
+    let mut break_stack = Vec::new();
+    let mut continue_stack = Vec::new();
+
+    gen_block(
+        func_data,
+        &func.block,
+        &mut map,
+        &mut break_stack,
+        &mut continue_stack,
+    );
 }
 
-fn gen_block(func_data: &mut FunctionData, block: &Block, map: &mut HashMap<String, Value>) {
+fn gen_block(
+    func_data: &mut FunctionData,
+    block: &Block,
+    map: &mut HashMap<String, Value>,
+    break_stack: &mut Vec<BasicBlock>,
+    continue_stack: &mut Vec<BasicBlock>,
+) {
     let entry_bb = func_data
         .dfg_mut()
         .new_bb()
@@ -40,7 +55,15 @@ fn gen_block(func_data: &mut FunctionData, block: &Block, map: &mut HashMap<Stri
             break;
         }
         match item {
-            BlockItem::Stmt(stmt) => gen_stmt(func_data, stmt, map, entry_bb, &mut cur_bb),
+            BlockItem::Stmt(stmt) => gen_stmt(
+                func_data,
+                stmt,
+                map,
+                entry_bb,
+                &mut cur_bb,
+                break_stack,
+                continue_stack,
+            ),
             BlockItem::Decl(decl) => gen_decl(func_data, decl, map, entry_bb, &mut cur_bb),
         }
     }
@@ -165,6 +188,8 @@ fn gen_stmt(
     map: &mut HashMap<String, Value>,
     entry_bb: BasicBlock,
     cur_bb: &mut BasicBlock,
+    break_stack: &mut Vec<BasicBlock>,
+    continue_stack: &mut Vec<BasicBlock>,
 ) {
     if bb_is_terminated(func_data, *cur_bb) {
         return;
@@ -187,9 +212,15 @@ fn gen_stmt(
                     break;
                 }
                 match item {
-                    BlockItem::Stmt(stmt) => {
-                        gen_stmt(func_data, stmt, &mut local_map, entry_bb, cur_bb)
-                    }
+                    BlockItem::Stmt(stmt) => gen_stmt(
+                        func_data,
+                        stmt,
+                        &mut local_map,
+                        entry_bb,
+                        cur_bb,
+                        break_stack,
+                        continue_stack,
+                    ),
                     BlockItem::Decl(decl) => {
                         gen_decl(func_data, decl, &mut local_map, entry_bb, cur_bb)
                     }
@@ -217,7 +248,15 @@ fn gen_stmt(
             func_data.layout_mut().bbs_mut().extend([then_entry_bb]);
             let mut then_exit_bb = then_entry_bb;
             let mut then_map = map.clone();
-            gen_stmt(func_data, then, &mut then_map, entry_bb, &mut then_exit_bb);
+            gen_stmt(
+                func_data,
+                then,
+                &mut then_map,
+                entry_bb,
+                &mut then_exit_bb,
+                break_stack,
+                continue_stack,
+            );
             if !bb_is_terminated(func_data, then_exit_bb) {
                 let jmp_to_end = func_data.dfg_mut().new_value().jump(end_bb);
                 push_inst(func_data, then_exit_bb, jmp_to_end);
@@ -231,7 +270,15 @@ fn gen_stmt(
                 func_data.layout_mut().bbs_mut().extend([else_entry_bb]);
                 let mut else_exit_bb = else_entry_bb;
                 let mut else_map = map.clone();
-                gen_stmt(func_data, else_, &mut else_map, entry_bb, &mut else_exit_bb);
+                gen_stmt(
+                    func_data,
+                    else_,
+                    &mut else_map,
+                    entry_bb,
+                    &mut else_exit_bb,
+                    break_stack,
+                    continue_stack,
+                );
                 if !bb_is_terminated(func_data, else_exit_bb) {
                     let jmp_to_end = func_data.dfg_mut().new_value().jump(end_bb);
                     push_inst(func_data, else_exit_bb, jmp_to_end);
@@ -272,6 +319,9 @@ fn gen_stmt(
                 .bbs_mut()
                 .extend([cond_entry_bb, while_body_bb, end_bb]);
 
+            break_stack.push(end_bb);
+            continue_stack.push(cond_entry_bb);
+
             let jmp_to_entry = func_data.dfg_mut().new_value().jump(cond_entry_bb);
             push_inst(func_data, *cur_bb, jmp_to_entry);
 
@@ -286,13 +336,44 @@ fn gen_stmt(
 
             let mut body_exit_bb = while_body_bb;
             let mut body_map = map.clone();
-            gen_stmt(func_data, body, &mut body_map, entry_bb, &mut body_exit_bb);
+            gen_stmt(
+                func_data,
+                body,
+                &mut body_map,
+                entry_bb,
+                &mut body_exit_bb,
+                break_stack,
+                continue_stack,
+            );
             if !bb_is_terminated(func_data, body_exit_bb) {
                 let jmp_to_entry = func_data.dfg_mut().new_value().jump(cond_entry_bb);
                 push_inst(func_data, body_exit_bb, jmp_to_entry);
             }
 
+            break_stack
+                .pop()
+                .expect("break stack underflow after while");
+            continue_stack
+                .pop()
+                .expect("continue stack underflow after while");
+
             *cur_bb = end_bb;
+        }
+        Stmt::Break => {
+            if let Some(break_target) = break_stack.last() {
+                let jmp_to_break = func_data.dfg_mut().new_value().jump(*break_target);
+                push_inst(func_data, *cur_bb, jmp_to_break);
+            } else {
+                panic!("`break` statement not within a loop");
+            }
+        }
+        Stmt::Continue => {
+            if let Some(continue_target) = continue_stack.last() {
+                let jmp_to_continue = func_data.dfg_mut().new_value().jump(*continue_target);
+                push_inst(func_data, *cur_bb, jmp_to_continue);
+            } else {
+                panic!("`continue` statement not within a loop");
+            }
         }
         Stmt::Ret(exp) => {
             let ret = match exp {

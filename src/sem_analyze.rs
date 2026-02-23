@@ -111,7 +111,7 @@ fn process_stmt(stmt: &mut Stmt, map: &mut SymbolTable, next_var_id: &mut usize)
             replace_exp(cond, map);
             process_stmt(body, map, next_var_id);
         }
-        Stmt::Exp(None) | Stmt::Ret(None) => {}
+        Stmt::Exp(None) | Stmt::Ret(None) | Stmt::Continue | Stmt::Break => {}
     }
 }
 

@@ -111,6 +111,8 @@ OtherStmt: Stmt = {
   "return" <exp: Exp?> ";" => Stmt::Ret(exp),
   <block: Block> => Stmt::Block(block),
   <exp: Exp?> ";" => Stmt::Exp(exp),
+  "continue" ";" => Stmt::Continue,
+  "break" ";" => Stmt::Break,
 };
 
 Exp: Exp = <lor_exp: LOrExp> => Exp{ <> };

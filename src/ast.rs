@@ -101,6 +101,8 @@ pub enum Stmt {
         cond: Exp,
         body: Box<Stmt>,
     },
+    Continue,
+    Break,
     Ret(Option<Exp>),
 }
 
