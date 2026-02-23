@@ -63,6 +63,38 @@ fn bb_is_terminated(func_data: &FunctionData, bb: BasicBlock) -> bool {
     )
 }
 
+fn push_inst(func_data: &mut FunctionData, bb: BasicBlock, inst: Value) {
+    let _ = func_data
+        .layout_mut()
+        .bb_mut(bb)
+        .insts_mut()
+        .push_key_back(inst);
+}
+
+fn gen_bool_value(func_data: &mut FunctionData, val: Value, bb: BasicBlock) -> Value {
+    let zero = func_data.dfg_mut().new_value().integer(0);
+    let bool_val = func_data
+        .dfg_mut()
+        .new_value()
+        .binary(BinaryOp::NotEq, val, zero);
+    push_inst(func_data, bb, bool_val);
+    bool_val
+}
+
+fn new_temp_i32_alloc(func_data: &mut FunctionData) -> Value {
+    let alloc = func_data.dfg_mut().new_value().alloc(Type::get_i32());
+    let entry_bb = func_data
+        .layout()
+        .entry_bb()
+        .expect("function must have entry basic block");
+    let _ = func_data
+        .layout_mut()
+        .bb_mut(entry_bb)
+        .insts_mut()
+        .push_key_front(alloc);
+    alloc
+}
+
 fn gen_decl(
     func_data: &mut FunctionData,
     decl: &Decl,
@@ -113,11 +145,7 @@ fn gen_var_def(
             map.insert(ident.clone(), alloc);
             let init_val = gen_init_val(func_data, val, map, cur_bb);
             let store = func_data.dfg_mut().new_value().store(init_val, alloc);
-            let _ = func_data
-                .layout_mut()
-                .bb_mut(*cur_bb)
-                .insts_mut()
-                .push_key_back(store);
+            push_inst(func_data, *cur_bb, store);
         }
     }
 }
@@ -128,7 +156,7 @@ fn gen_init_val(
     map: &mut HashMap<String, Value>,
     cur_bb: &mut BasicBlock,
 ) -> Value {
-    gen_exp(func_data, &init_val.exp, map, *cur_bb)
+    gen_exp(func_data, &init_val.exp, map, cur_bb)
 }
 
 fn gen_stmt(
@@ -144,14 +172,10 @@ fn gen_stmt(
 
     match stmt {
         Stmt::Assign { lval, exp } => {
-            let val = gen_exp(func_data, exp, map, *cur_bb);
+            let val = gen_exp(func_data, exp, map, cur_bb);
             if let Some(alloc) = map.get(&lval.ident) {
                 let store = func_data.dfg_mut().new_value().store(val, *alloc);
-                let _ = func_data
-                    .layout_mut()
-                    .bb_mut(*cur_bb)
-                    .insts_mut()
-                    .push_key_back(store);
+                push_inst(func_data, *cur_bb, store);
             } else {
                 panic!("Identifier {} not found", lval.ident);
             }
@@ -173,11 +197,12 @@ fn gen_stmt(
             }
         }
         Stmt::Exp(Some(exp)) => {
-            let _ = gen_exp(func_data, exp, map, *cur_bb);
+            let _ = gen_exp(func_data, exp, map, cur_bb);
         }
         Stmt::Exp(None) => {}
         Stmt::If { cond, then, else_ } => {
-            let cond_val = gen_exp(func_data, cond, map, *cur_bb);
+            let cond_raw = gen_exp(func_data, cond, map, cur_bb);
+            let cond_val = gen_bool_value(func_data, cond_raw, *cur_bb);
 
             let end_bb = func_data
                 .dfg_mut()
@@ -195,11 +220,7 @@ fn gen_stmt(
             gen_stmt(func_data, then, &mut then_map, entry_bb, &mut then_exit_bb);
             if !bb_is_terminated(func_data, then_exit_bb) {
                 let jmp_to_end = func_data.dfg_mut().new_value().jump(end_bb);
-                let _ = func_data
-                    .layout_mut()
-                    .bb_mut(then_exit_bb)
-                    .insts_mut()
-                    .push_key_back(jmp_to_end);
+                push_inst(func_data, then_exit_bb, jmp_to_end);
             }
 
             if let Some(else_) = else_ {
@@ -213,49 +234,33 @@ fn gen_stmt(
                 gen_stmt(func_data, else_, &mut else_map, entry_bb, &mut else_exit_bb);
                 if !bb_is_terminated(func_data, else_exit_bb) {
                     let jmp_to_end = func_data.dfg_mut().new_value().jump(end_bb);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(else_exit_bb)
-                        .insts_mut()
-                        .push_key_back(jmp_to_end);
+                    push_inst(func_data, else_exit_bb, jmp_to_end);
                 }
                 let br_val =
                     func_data
                         .dfg_mut()
                         .new_value()
                         .branch(cond_val, then_entry_bb, else_entry_bb);
-                let _ = func_data
-                    .layout_mut()
-                    .bb_mut(*cur_bb)
-                    .insts_mut()
-                    .push_key_back(br_val);
+                push_inst(func_data, *cur_bb, br_val);
             } else {
                 let br_val =
                     func_data
                         .dfg_mut()
                         .new_value()
                         .branch(cond_val, then_entry_bb, end_bb);
-                let _ = func_data
-                    .layout_mut()
-                    .bb_mut(*cur_bb)
-                    .insts_mut()
-                    .push_key_back(br_val);
+                push_inst(func_data, *cur_bb, br_val);
             }
             *cur_bb = end_bb;
         }
         Stmt::Ret(exp) => {
             let ret = match exp {
                 Some(exp) => {
-                    let val = gen_exp(func_data, exp, map, *cur_bb);
+                    let val = gen_exp(func_data, exp, map, cur_bb);
                     func_data.dfg_mut().new_value().ret(Some(val))
                 }
                 None => func_data.dfg_mut().new_value().ret(None),
             };
-            let _ = func_data
-                .layout_mut()
-                .bb_mut(*cur_bb)
-                .insts_mut()
-                .push_key_back(ret);
+            push_inst(func_data, *cur_bb, ret);
         }
     }
 }
@@ -264,7 +269,7 @@ fn gen_exp(
     func_data: &mut FunctionData,
     exp: &Exp,
     map: &mut HashMap<String, Value>,
-    cur_bb: BasicBlock,
+    cur_bb: &mut BasicBlock,
 ) -> Value {
     gen_lor_exp(func_data, &exp.lor_exp, map, cur_bb)
 }
@@ -273,44 +278,53 @@ fn gen_lor_exp(
     func_data: &mut FunctionData,
     lor_exp: &LOrExp,
     map: &mut HashMap<String, Value>,
-    cur_bb: BasicBlock,
+    cur_bb: &mut BasicBlock,
 ) -> Value {
     match lor_exp {
         LOrExp::LAnd(land) => gen_land_exp(func_data, land, map, cur_bb),
         LOrExp::LOr { lor, land } => {
-            let lval = gen_lor_exp(func_data, lor, map, cur_bb);
-            let zero = func_data.dfg_mut().new_value().integer(0);
-            let lhs = func_data
-                .dfg_mut()
-                .new_value()
-                .binary(BinaryOp::NotEq, lval, zero);
-            let rval = gen_land_exp(func_data, land, map, cur_bb);
-            let zero = func_data.dfg_mut().new_value().integer(0);
-            let rhs = func_data
-                .dfg_mut()
-                .new_value()
-                .binary(BinaryOp::NotEq, rval, zero);
-            let _ = func_data
-                .layout_mut()
-                .bb_mut(cur_bb)
-                .insts_mut()
-                .push_key_back(lhs);
-            let _ = func_data
-                .layout_mut()
-                .bb_mut(cur_bb)
-                .insts_mut()
-                .push_key_back(rhs);
+            let left_raw = gen_lor_exp(func_data, lor, map, cur_bb);
+            let left_bool = gen_bool_value(func_data, left_raw, *cur_bb);
 
-            let result = func_data
+            let rhs_bb = func_data
+                .dfg_mut()
+                .new_bb()
+                .basic_block(Some("%lor.rhs".into()));
+            let end_bb = func_data
+                .dfg_mut()
+                .new_bb()
+                .basic_block(Some("%lor.end".into()));
+            func_data.layout_mut().bbs_mut().extend([rhs_bb, end_bb]);
+
+            let result_alloc = new_temp_i32_alloc(func_data);
+
+            let one = func_data.dfg_mut().new_value().integer(1);
+            let store_default_true = func_data.dfg_mut().new_value().store(one, result_alloc);
+            push_inst(func_data, *cur_bb, store_default_true);
+
+            let br = func_data
                 .dfg_mut()
                 .new_value()
-                .binary(BinaryOp::Or, lhs, rhs);
-            let _ = func_data
-                .layout_mut()
-                .bb_mut(cur_bb)
-                .insts_mut()
-                .push_key_back(result);
-            result
+                .branch(left_bool, end_bb, rhs_bb);
+            push_inst(func_data, *cur_bb, br);
+
+            let mut rhs_exit_bb = rhs_bb;
+            let right_raw = gen_land_exp(func_data, land, map, &mut rhs_exit_bb);
+            let right_bool = gen_bool_value(func_data, right_raw, rhs_exit_bb);
+            let store_rhs = func_data
+                .dfg_mut()
+                .new_value()
+                .store(right_bool, result_alloc);
+            push_inst(func_data, rhs_exit_bb, store_rhs);
+            if !bb_is_terminated(func_data, rhs_exit_bb) {
+                let jmp_from_rhs = func_data.dfg_mut().new_value().jump(end_bb);
+                push_inst(func_data, rhs_exit_bb, jmp_from_rhs);
+            }
+
+            *cur_bb = end_bb;
+            let load_result = func_data.dfg_mut().new_value().load(result_alloc);
+            push_inst(func_data, *cur_bb, load_result);
+            load_result
         }
     }
 }
@@ -319,44 +333,53 @@ fn gen_land_exp(
     func_data: &mut FunctionData,
     land_exp: &LAndExp,
     map: &mut HashMap<String, Value>,
-    cur_bb: BasicBlock,
+    cur_bb: &mut BasicBlock,
 ) -> Value {
     match land_exp {
         LAndExp::Eq(eq) => gen_eq_exp(func_data, eq, map, cur_bb),
         LAndExp::LAnd { land, eq } => {
-            let lval = gen_land_exp(func_data, land, map, cur_bb);
-            let zero = func_data.dfg_mut().new_value().integer(0);
-            let lhs = func_data
-                .dfg_mut()
-                .new_value()
-                .binary(BinaryOp::NotEq, lval, zero);
-            let rval = gen_eq_exp(func_data, eq, map, cur_bb);
-            let zero = func_data.dfg_mut().new_value().integer(0);
-            let rhs = func_data
-                .dfg_mut()
-                .new_value()
-                .binary(BinaryOp::NotEq, rval, zero);
-            let _ = func_data
-                .layout_mut()
-                .bb_mut(cur_bb)
-                .insts_mut()
-                .push_key_back(lhs);
-            let _ = func_data
-                .layout_mut()
-                .bb_mut(cur_bb)
-                .insts_mut()
-                .push_key_back(rhs);
+            let left_raw = gen_land_exp(func_data, land, map, cur_bb);
+            let left_bool = gen_bool_value(func_data, left_raw, *cur_bb);
 
-            let result = func_data
+            let rhs_bb = func_data
+                .dfg_mut()
+                .new_bb()
+                .basic_block(Some("%land.rhs".into()));
+            let end_bb = func_data
+                .dfg_mut()
+                .new_bb()
+                .basic_block(Some("%land.end".into()));
+            func_data.layout_mut().bbs_mut().extend([rhs_bb, end_bb]);
+
+            let result_alloc = new_temp_i32_alloc(func_data);
+
+            let zero = func_data.dfg_mut().new_value().integer(0);
+            let store_default_false = func_data.dfg_mut().new_value().store(zero, result_alloc);
+            push_inst(func_data, *cur_bb, store_default_false);
+
+            let br = func_data
                 .dfg_mut()
                 .new_value()
-                .binary(BinaryOp::And, lhs, rhs);
-            let _ = func_data
-                .layout_mut()
-                .bb_mut(cur_bb)
-                .insts_mut()
-                .push_key_back(result);
-            result
+                .branch(left_bool, rhs_bb, end_bb);
+            push_inst(func_data, *cur_bb, br);
+
+            let mut rhs_exit_bb = rhs_bb;
+            let right_raw = gen_eq_exp(func_data, eq, map, &mut rhs_exit_bb);
+            let right_bool = gen_bool_value(func_data, right_raw, rhs_exit_bb);
+            let store_rhs = func_data
+                .dfg_mut()
+                .new_value()
+                .store(right_bool, result_alloc);
+            push_inst(func_data, rhs_exit_bb, store_rhs);
+            if !bb_is_terminated(func_data, rhs_exit_bb) {
+                let jmp_from_rhs = func_data.dfg_mut().new_value().jump(end_bb);
+                push_inst(func_data, rhs_exit_bb, jmp_from_rhs);
+            }
+
+            *cur_bb = end_bb;
+            let load_result = func_data.dfg_mut().new_value().load(result_alloc);
+            push_inst(func_data, *cur_bb, load_result);
+            load_result
         }
     }
 }
@@ -365,7 +388,7 @@ fn gen_eq_exp(
     func_data: &mut FunctionData,
     eq_exp: &EqExp,
     map: &mut HashMap<String, Value>,
-    cur_bb: BasicBlock,
+    cur_bb: &mut BasicBlock,
 ) -> Value {
     match eq_exp {
         EqExp::Rel(rel) => gen_rel_exp(func_data, rel, map, cur_bb),
@@ -378,11 +401,7 @@ fn gen_eq_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Eq, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
                 EqOp::Neq => {
@@ -390,11 +409,7 @@ fn gen_eq_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::NotEq, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
             }
@@ -406,7 +421,7 @@ fn gen_rel_exp(
     func_data: &mut FunctionData,
     rel_exp: &RelExp,
     map: &mut HashMap<String, Value>,
-    cur_bb: BasicBlock,
+    cur_bb: &mut BasicBlock,
 ) -> Value {
     match rel_exp {
         RelExp::Add(add) => gen_add_exp(func_data, add, map, cur_bb),
@@ -419,11 +434,7 @@ fn gen_rel_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Lt, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
                 RelOp::Gt => {
@@ -431,11 +442,7 @@ fn gen_rel_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Gt, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
                 RelOp::Le => {
@@ -443,11 +450,7 @@ fn gen_rel_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Le, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
                 RelOp::Ge => {
@@ -455,11 +458,7 @@ fn gen_rel_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Ge, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
             }
@@ -471,7 +470,7 @@ fn gen_add_exp(
     func_data: &mut FunctionData,
     add_exp: &AddExp,
     map: &mut HashMap<String, Value>,
-    cur_bb: BasicBlock,
+    cur_bb: &mut BasicBlock,
 ) -> Value {
     match add_exp {
         AddExp::Mul(mul) => gen_mul_exp(func_data, mul, map, cur_bb),
@@ -484,11 +483,7 @@ fn gen_add_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Sub, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
                 AddOp::Plus => {
@@ -496,11 +491,7 @@ fn gen_add_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Add, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
             }
@@ -512,7 +503,7 @@ fn gen_mul_exp(
     func_data: &mut FunctionData,
     mul_exp: &MulExp,
     map: &mut HashMap<String, Value>,
-    cur_bb: BasicBlock,
+    cur_bb: &mut BasicBlock,
 ) -> Value {
     match mul_exp {
         MulExp::Unary(unary) => gen_unary_exp(func_data, unary, map, cur_bb),
@@ -525,11 +516,7 @@ fn gen_mul_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Div, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
                 MulOp::Mod => {
@@ -537,11 +524,7 @@ fn gen_mul_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Mod, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
                 MulOp::Mul => {
@@ -549,11 +532,7 @@ fn gen_mul_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Mul, lhs, rhs);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
             }
@@ -565,7 +544,7 @@ fn gen_unary_exp(
     func_data: &mut FunctionData,
     unary_exp: &UnaryExp,
     map: &mut HashMap<String, Value>,
-    cur_bb: BasicBlock,
+    cur_bb: &mut BasicBlock,
 ) -> Value {
     match unary_exp {
         UnaryExp::PrimaryExp(primary_exp) => gen_primary_exp(func_data, primary_exp, map, cur_bb),
@@ -579,11 +558,7 @@ fn gen_unary_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Sub, zero, val);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
                 UnaryOp::Plus => val,
@@ -593,11 +568,7 @@ fn gen_unary_exp(
                         .dfg_mut()
                         .new_value()
                         .binary(BinaryOp::Eq, zero, val);
-                    let _ = func_data
-                        .layout_mut()
-                        .bb_mut(cur_bb)
-                        .insts_mut()
-                        .push_key_back(result);
+                    push_inst(func_data, *cur_bb, result);
                     result
                 }
             }
@@ -609,18 +580,14 @@ fn gen_primary_exp(
     func_data: &mut FunctionData,
     primary_exp: &PrimaryExp,
     map: &mut HashMap<String, Value>,
-    cur_bb: BasicBlock,
+    cur_bb: &mut BasicBlock,
 ) -> Value {
     match primary_exp {
         PrimaryExp::Exp(exp) => gen_exp(func_data, exp, map, cur_bb),
         PrimaryExp::LVal(lval) => {
             if let Some(alloc) = map.get(&lval.ident) {
                 let load = func_data.dfg_mut().new_value().load(*alloc);
-                let _ = func_data
-                    .layout_mut()
-                    .bb_mut(cur_bb)
-                    .insts_mut()
-                    .push_key_back(load);
+                push_inst(func_data, *cur_bb, load);
                 load
             } else {
                 panic!("Identifier {} not found", lval.ident);
